@@ -603,6 +603,18 @@ body.locked .app{display:none}
 .boot-text{text-align:center;color:var(--muted)}
 .boot-err{max-width:520px;text-align:center}
 .boot-err p{color:var(--muted);margin:10px 0 18px}
+/* Sicherungsablage */
+.abl-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--r-md);background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05)}
+.abl-row + .abl-row{margin-top:8px}
+.abl-row .who{flex:1;min-width:0}
+.abl-row .who b{display:block;font-weight:500}
+.abl-row .who small{display:block;color:var(--muted);font-size:12px}
+.abl-sub{margin:10px 0 0 4px;padding:12px 14px;border-left:2px solid rgba(168,209,154,.35)}
+.fold-name{display:flex;align-items:center;gap:10px}
+.fold-name svg{width:18px;height:18px;color:var(--sage)}
+.fold-name b{font-weight:500;font-size:15px}
+.switch-row{display:flex;align-items:center;gap:12px;cursor:pointer;font-size:13px}
+code{font-size:11.5px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:6px}
 /* Sicherungsliste */
 .bk-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;padding-right:2px}
 .bk-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-md);background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05)}
@@ -768,7 +780,7 @@ window.dispatchEvent(new Event('cloud-ready'));
    Daten & Einstellungen
    ========================================================= */
 const STORE_KEY = 'projektcockpit-auslastung-v2';
-const DEFAULTS = { userName: '', fullLoad: 85, numberPrefix: '320', defaultHours: 160, dbGood: 20, dbBad: 10 };
+const DEFAULTS = { userName: '', fullLoad: 85, numberPrefix: '320', defaultHours: 160, dbGood: 20, dbBad: 10, cloudBackup: true };
 const MONTHS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const MONTHS_L = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const COLORS = ['#A8D19A','#EBBE78','#9CC5D8','#D8A9C9','#C9C3A0','#E8A88F','#B4B8E6','#8FD1BE'];
@@ -917,20 +929,141 @@ async function pruneBackups(){
     for(const b of old) await Cloud.deleteDoc(Cloud.backupDoc(cloudUser.uid, b.id));
   }catch(e){ console.warn('Alte Sicherungen konnten nicht entfernt werden', e); }
 }
+/* =========================================================
+   Eigene Sicherungsablage: Ordner auf diesem Computer
+   (z. B. OneDrive-/SharePoint-Ordner oder Netzlaufwerk) – File System Access API,
+   unterstützt von Chrome und Edge. Die Ordnerwahl gilt pro Gerät/Browser.
+   ========================================================= */
+const FS_OK = 'showDirectoryPicker' in window;
+const LS = { auto: 'pc-folder-auto', keep: 'pc-folder-keep', daily: 'pc-folder-daily', last: 'pc-folder-last', dl: 'pc-download-daily' };
+const lsGet = (k, d) => { try{ const v = localStorage.getItem(k); return v === null ? d : v; }catch(e){ return d; } };
+const lsSet = (k, v) => { try{ localStorage.setItem(k, v); }catch(e){} };
+let backupDir = null, folderPending = null;
+/* kleiner Schlüssel-Wert-Speicher in IndexedDB (für den Ordner-Zugriff) */
+const idb = {
+  open(){ return new Promise((res, rej) => { const r = indexedDB.open('projektcockpit', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async run(mode, fn){ const db = await this.open(); return new Promise((res, rej) => { const st = db.transaction('kv', mode).objectStore('kv'), q = fn(st); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+  get(k){ return this.run('readonly', s => s.get(k)); },
+  set(k, v){ return this.run('readwrite', s => s.put(v, k)); },
+  del(k){ return this.run('readwrite', s => s.delete(k)); }
+};
+async function loadBackupDir(){ if(!FS_OK) return; try{ backupDir = (await idb.get('backupDir')) || null; }catch(e){ backupDir = null; } }
+async function pickBackupDir(){
+  const h = await window.showDirectoryPicker({ id: 'projektcockpit-sicherung', mode: 'readwrite' });
+  await idb.set('backupDir', h); backupDir = h; lsSet(LS.auto, '1');
+}
+async function forgetBackupDir(){ backupDir = null; try{ await idb.del('backupDir'); }catch(e){} }
+async function dirPermission(request){
+  if(!backupDir) return 'none';
+  const o = { mode: 'readwrite' };
+  let p = await backupDir.queryPermission(o);
+  if(p !== 'granted' && request){ try{ p = await backupDir.requestPermission(o); }catch(e){} }
+  return p;
+}
+const slug = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+function backupFileContent(reason){ return JSON.stringify({ app: 'ProjektCockpit-Auslastung', version: 2, reason, exportedAt: new Date().toISOString(), ...state }, null, 2); }
+function backupFileName(reason, daily){
+  const n = new Date();
+  return daily ? `ProjektCockpit_${todayISO()}_taeglich.json` : `ProjektCockpit_${todayISO()}_${pad(n.getHours())}-${pad(n.getMinutes())}-${pad(n.getSeconds())}_${slug(reason)}.json`;
+}
+/* Sicherung als Datei in den gewählten Ordner schreiben → 'ok' | 'off' | 'prompt' | 'err' */
+async function writeFolderBackup(reason, daily, request){
+  if(!backupDir || lsGet(LS.auto, '1') !== '1') return 'off';
+  try{
+    if((await dirPermission(request)) !== 'granted'){ folderPending = { reason, daily }; showFolderPrompt(true); return 'prompt'; }
+    const fh = await backupDir.getFileHandle(backupFileName(reason, daily), { create: true });
+    const w = await fh.createWritable(); await w.write(backupFileContent(reason)); await w.close();
+    lsSet(LS.last, new Date().toISOString()); if(daily) lsSet(LS.daily, todayISO());
+    folderPending = null; showFolderPrompt(false);
+    pruneFolder();
+    return 'ok';
+  }catch(e){ console.error('Ordner-Sicherung fehlgeschlagen', e); return 'err'; }
+}
+/* alte Dateien im Ordner entfernen (Aufbewahrung in Tagen, 0 = unbegrenzt) */
+async function pruneFolder(){
+  const keep = +lsGet(LS.keep, '30'); if(!keep || !backupDir) return;
+  try{
+    const limit = iso(new Date(today0().getTime() - keep * DAY));
+    for await (const [name, h] of backupDir.entries()){
+      const m = name.match(/^ProjektCockpit_(\d{4}-\d{2}-\d{2})_.*\.json$/);
+      if(h.kind === 'file' && m && m[1] < limit) await backupDir.removeEntry(name);
+    }
+  }catch(e){ console.warn('Aufräumen im Sicherungsordner fehlgeschlagen', e); }
+}
+/* Hinweis oben: Browser verlangt nach dem Neustart eine Bestätigung für den Ordnerzugriff */
+function showFolderPrompt(show){
+  let b = document.getElementById('fold-pill');
+  if(!b){
+    b = document.createElement('button'); b.id = 'fold-pill'; b.className = 'sync err'; b.type = 'button';
+    b.innerHTML = '<i></i><span>Sicherungsordner freigeben</span>'; b.title = 'Der Browser braucht deine Bestätigung, um in den Sicherungsordner zu schreiben';
+    b.onclick = async () => { const p = await dirPermission(true); if(p === 'granted'){ const f = folderPending || { reason: 'Tägliche Sicherung', daily: lsGet(LS.daily, '') !== todayISO() }; const r = await writeFolderBackup(f.reason, f.daily, false); if(r === 'ok') toast('Sicherung im Ordner gespeichert'); } };
+    document.getElementById('sync').before(b);
+  }
+  b.hidden = !show;
+}
+/* Bedienelemente für den Sicherungsordner in den Einstellungen */
+async function renderFolderCtrl(box){
+  if(!box) return;
+  const last = lsGet(LS.last, '');
+  if(!FS_OK){
+    box.innerHTML = `<div class="abl-sub"><p class="hint" style="margin:0 0 10px">Dein Browser kann keinen Ordner direkt beschreiben. Für die Ordnerwahl das Programm in <b>Chrome</b> oder <b>Edge</b> öffnen. Alternative:</p>
+      <label class="switch-row"><label class="tgl"><input type="checkbox" data-bkset="dl" ${lsGet(LS.dl, '0') === '1' ? 'checked' : ''}><i></i></label><span>Täglich automatisch als Datei herunterladen (Download-Ordner)</span></label>
+      ${last ? `<p class="hint">Letzte Sicherung: ${fmtDateTime(last)}</p>` : ''}</div>`;
+    return;
+  }
+  if(!backupDir){
+    box.innerHTML = `<div class="abl-sub"><button type="button" class="btn btn-primary btn-sm" data-bk="pick">${I.folder} Ordner wählen …</button>
+      <p class="hint">Tipp: Einen OneDrive-, SharePoint- oder Netzlaufwerk-Ordner wählen – dann liegen die Sicherungen automatisch auch auf dem Firmenserver.</p></div>`;
+    return;
+  }
+  const perm = await dirPermission(false);
+  const keep = lsGet(LS.keep, '30');
+  box.innerHTML = `<div class="abl-sub">
+    <div class="fold-name">${I.folder}<b>${esc(backupDir.name)}</b>${perm === 'granted' ? '<span class="pill lv l-good"><span class="dot"></span>bereit</span>' : '<span class="pill lv l-full"><span class="dot"></span>Freigabe nötig</span>'}</div>
+    <div class="grid-2" style="margin-top:12px">
+      ${field('Aufbewahrung im Ordner', `<select data-bkset="keep">${[['30', '30 Tage'], ['90', '90 Tage'], ['365', '1 Jahr'], ['0', 'unbegrenzt']].map(([v, l]) => `<option value="${v}" ${keep === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+      ${field('Letzte Sicherung im Ordner', `<div class="input" style="background:transparent">${last ? fmtDateTime(last) : '–'}</div>`)}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button type="button" class="btn btn-sm btn-primary" data-bk="fnow">${I.check} Jetzt in Ordner sichern</button>
+      <button type="button" class="btn btn-sm" data-bk="pick">${I.folder} Anderen Ordner wählen</button>
+      <button type="button" class="btn btn-sm btn-danger" data-bk="forget">Ordner entfernen</button>
+    </div>
+    <p class="hint">Dateinamen: <code>ProjektCockpit_JJJJ-MM-TT_taeglich.json</code> bzw. mit Uhrzeit und Anlass. Wiederherstellen: Einstellungen → Importieren.${perm !== 'granted' ? ' Der Browser fragt nach einem Neustart einmal nach, ob das Programm weiter in den Ordner schreiben darf.' : ''}</p>
+  </div>`;
+}
+/* Fallback ohne Ordnerwahl (Safari/Firefox): täglich als Download */
+function dailyDownload(){
+  if(FS_OK || lsGet(LS.dl, '0') !== '1' || lsGet(LS.daily, '') === todayISO()) return;
+  downloadJSON(backupFileContent('Tägliche Sicherung'), backupFileName('Tägliche Sicherung', true));
+  lsSet(LS.daily, todayISO()); lsSet(LS.last, new Date().toISOString());
+}
+
 /* einmal pro Tag den Stand sichern (beim Öffnen bzw. beim ersten Speichern nach Mitternacht) */
 async function dailyBackup(){
   const day = todayISO();
   if(lastBackupDay === day || !cloudReady) return;
   lastBackupDay = day;
-  try{
-    const s = await Cloud.getDoc(Cloud.backupDoc(cloudUser.uid, `d-${day}`));
-    if(!s.exists()) await createBackup('Tägliche Sicherung', true);
-  }catch(e){ lastBackupDay = ''; console.warn('Tägliche Sicherung fehlgeschlagen', e); }
+  // 1) Firebase
+  if(S().cloudBackup !== false){
+    try{
+      const s = await Cloud.getDoc(Cloud.backupDoc(cloudUser.uid, `d-${day}`));
+      if(!s.exists()) await createBackup('Tägliche Sicherung', true);
+    }catch(e){ lastBackupDay = ''; console.warn('Tägliche Cloud-Sicherung fehlgeschlagen', e); }
+  }
+  // 2) eigener Ordner bzw. Download
+  if(lsGet(LS.daily, '') !== day){ if(backupDir) await writeFolderBackup('Tägliche Sicherung', true, false); else dailyDownload(); }
 }
-/* Sicherung vor riskanter Aktion – bei Fehler wird die Aktion abgebrochen */
+/* Sicherung vor riskanter Aktion – an allen gewählten Ablagen. Schlägt alles fehl, wird abgebrochen. */
 async function safeguard(reason){
-  try{ await createBackup(reason, false); return true; }
-  catch(e){ console.error(e); toast('Sicherung fehlgeschlagen – Vorgang abgebrochen, es wurde nichts verändert', 'err'); return false; }
+  const folderPerm = backupDir && lsGet(LS.auto, '1') === '1' ? dirPermission(true) : null;   // sofort anfragen (Klick-Kontext)
+  let ok = 0, tried = 0;
+  if(S().cloudBackup !== false){ tried++; try{ await createBackup(reason, false); ok++; }catch(e){ console.error(e); } }
+  if(folderPerm){ await folderPerm; tried++; if((await writeFolderBackup(reason, false, false)) === 'ok') ok++; }
+  if(!tried){ downloadJSON(backupFileContent(reason), backupFileName(reason, false)); return true; }   // keine Ablage gewählt: als Download
+  if(!ok){ toast('Sicherung fehlgeschlagen – Vorgang abgebrochen, es wurde nichts verändert', 'err'); return false; }
+  if(ok < tried) toast('Sicherung nur teilweise erstellt – bitte Sicherungsablage in den Einstellungen prüfen', 'warn');
+  return true;
 }
 function fmtDateTime(isoStr){
   const d = new Date(isoStr); if(isNaN(d)) return '–';
@@ -980,6 +1113,7 @@ function gate(mode, text){
 }
 function bootCloud(){
   gate('boot', 'Verbindung wird aufgebaut …');
+  loadBackupDir();
   const start = () => Cloud.onAuth(onAuthChanged);
   if(window.Cloud) start();
   else {
@@ -1974,9 +2108,16 @@ function settingsModal(){
           <div style="flex:1;min-width:0"><b style="font-weight:500">${esc(cloudUser ? cloudUser.email : '–')}</b><small style="display:block;color:var(--muted);font-size:12px">angemeldet · Daten in Firebase gespeichert</small></div>
           <button type="button" class="btn" data-s="logout">Abmelden</button>
         </div></div>
-      <div class="form-sec"><h4 style="display:flex;justify-content:space-between;align-items:center;gap:10px">Automatische Sicherungen
+      <div class="form-sec"><h4>Sicherungsablage</h4>
+        <p class="hint" style="margin:0 0 12px">Automatisch gesichert wird täglich beim ersten Öffnen und vor „Alles löschen“, Import, Demo-Daten und Wiederherstellen – an allen eingeschalteten Ablagen.</p>
+        <div class="abl-row"><span class="ic">${I.leaf}</span><div class="who"><b>Firebase (Cloud)</b><small>${BACKUP_KEEP_DAILY} Tage aufbewahrt · auf allen Geräten verfügbar</small></div>
+          <label class="tgl" title="Sicherung in Firebase"><input type="checkbox" data-bkset="cloud" ${S().cloudBackup !== false ? 'checked' : ''}><i></i></label></div>
+        <div class="abl-row"><span class="ic">${I.folder}</span><div class="who"><b>Eigener Ordner</b><small>${FS_OK ? 'z. B. OneDrive / SharePoint, Netzlaufwerk oder lokaler Ordner – gilt für diesen Computer' : 'Ordnerwahl nur in Chrome oder Edge möglich'}</small></div>
+          ${FS_OK ? `<label class="tgl" title="Sicherung im Ordner"><input type="checkbox" data-bkset="folder" ${lsGet(LS.auto, '1') === '1' ? 'checked' : ''}><i></i></label>` : ''}</div>
+        <div id="fold-ctrl"></div>
+      </div>
+      <div class="form-sec"><h4 style="display:flex;justify-content:space-between;align-items:center;gap:10px">Sicherungen in Firebase
           <button type="button" class="btn btn-sm" data-bk="now" style="text-transform:none;letter-spacing:0">${I.check} Jetzt sichern</button></h4>
-        <p class="hint" style="margin:0 0 12px">Täglich beim ersten Öffnen und vor „Alles löschen“, Import, Demo-Daten und Wiederherstellen. Tägliche Sicherungen werden ${BACKUP_KEEP_DAILY} Tage aufbewahrt.</p>
         <div id="bk-box"></div></div>
       <div class="form-sec"><h4>Daten</h4>
         <p class="hint" style="margin:0 0 12px">Daten werden in der Cloud (Firebase) gespeichert und sind auf jedem Gerät nach der Anmeldung verfügbar. Zusätzliche Sicherung: exportieren.</p>
@@ -1992,6 +2133,18 @@ function settingsModal(){
   const f = ov.querySelector('#sform');
   f.addEventListener('click', ev => {
     const k = ev.target.closest('[data-bk]');
+    if(k && ['pick', 'fnow', 'forget'].includes(k.dataset.bk)){
+      const fc = ov.querySelector('#fold-ctrl');
+      if(k.dataset.bk === 'pick'){
+        pickBackupDir().then(async () => { renderFolderCtrl(fc); const r = await writeFolderBackup('Erste Sicherung', false, true); toast(r === 'ok' ? `Sicherungsordner „${backupDir.name}“ eingerichtet – erste Sicherung gespeichert` : 'Ordner gewählt'); renderFolderCtrl(fc); })
+          .catch(e => { if(e && e.name !== 'AbortError') toast(`Ordner konnte nicht gewählt werden (${e.message})`, 'err'); });
+      }
+      if(k.dataset.bk === 'fnow'){
+        writeFolderBackup('Manuelle Sicherung', false, true).then(r => { toast(r === 'ok' ? `Sicherung in „${backupDir.name}“ gespeichert` : r === 'off' ? 'Ordner-Sicherung ist ausgeschaltet' : 'Sicherung im Ordner fehlgeschlagen', r === 'ok' ? 'ok' : 'err'); renderFolderCtrl(fc); });
+      }
+      if(k.dataset.bk === 'forget'){ forgetBackupDir().then(() => { renderFolderCtrl(fc); toast('Sicherungsordner entfernt – die Dateien im Ordner bleiben erhalten'); }); }
+      return;
+    }
     if(k){
       const box = ov.querySelector('#bk-box');
       if(k.dataset.bk === 'now'){
@@ -2013,6 +2166,16 @@ function settingsModal(){
     ({ export: exportData, import: () => document.getElementById('import-file').click(), demo: loadDemo, reset: resetAll, logout })[b.dataset.s]();
   });
   renderBackupList(ov.querySelector('#bk-box'));
+  renderFolderCtrl(ov.querySelector('#fold-ctrl'));
+  // Ablage-Schalter wirken sofort (unabhängig von „Speichern“)
+  f.addEventListener('change', ev => {
+    const t = ev.target, k = t.dataset.bkset; if(!k) return;
+    if(k === 'cloud'){ state.settings.cloudBackup = t.checked; save(); toast(t.checked ? 'Sicherung in Firebase eingeschaltet' : 'Sicherung in Firebase ausgeschaltet', t.checked ? 'ok' : 'warn'); }
+    if(k === 'folder'){ lsSet(LS.auto, t.checked ? '1' : '0'); toast(t.checked ? 'Ordner-Sicherung eingeschaltet' : 'Ordner-Sicherung ausgeschaltet', t.checked ? 'ok' : 'warn'); }
+    if(k === 'keep'){ lsSet(LS.keep, t.value); pruneFolder(); toast('Aufbewahrung gespeichert'); }
+    if(k === 'dl'){ lsSet(LS.dl, t.checked ? '1' : '0'); }
+    renderFolderCtrl(ov.querySelector('#fold-ctrl'));
+  });
   f.addEventListener('submit', ev => {
     ev.preventDefault();
     const fl = num(f.fullLoad.value), g = num(f.dbGood.value), b = num(f.dbBad.value), errs = [];
