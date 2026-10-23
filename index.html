@@ -603,6 +603,12 @@ body.locked .app{display:none}
 .boot-text{text-align:center;color:var(--muted)}
 .boot-err{max-width:520px;text-align:center}
 .boot-err p{color:var(--muted);margin:10px 0 18px}
+/* Sicherungsliste */
+.bk-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;padding-right:2px}
+.bk-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-md);background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05)}
+.bk-row .who{flex:1;min-width:0}
+.bk-row .who b{display:block;font-weight:500;font-size:13px}
+.bk-row .who small{display:block;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Speicherstatus */
 .sync{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap}
 .sync i{width:8px;height:8px;border-radius:50%;background:var(--sage);box-shadow:0 0 8px var(--sage-glow)}
@@ -727,7 +733,7 @@ body.locked .app{display:none}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // Web-Konfiguration aus der Firebase-Konsole (öffentlich – der Schutz erfolgt über Login + Firestore-Regeln)
 const firebaseConfig = {
@@ -749,7 +755,9 @@ window.Cloud = {
   signOut: () => signOut(auth),
   resetPassword: email => sendPasswordResetEmail(auth, email),
   docRef: uid => doc(db, 'cockpit', uid),
-  getDoc, setDoc, onSnapshot, serverTimestamp
+  backupCol: uid => collection(db, 'cockpit', uid, 'backups'),
+  backupDoc: (uid, id) => doc(db, 'cockpit', uid, 'backups', id),
+  getDoc, setDoc, onSnapshot, serverTimestamp, getDocs, deleteDoc
 };
 window.dispatchEvent(new Event('cloud-ready'));
 </script>
@@ -862,6 +870,7 @@ async function flushSave(){
   try{
     await Cloud.setDoc(Cloud.docRef(cloudUser.uid), { json, version: 2, updatedAt: Cloud.serverTimestamp(), by: cloudUser.email || '' });
     lastSyncedJson = json; setSync('ok');
+    if(lastBackupDay !== todayISO()) dailyBackup();       // App über Mitternacht offen
   }catch(e){
     console.error('Cloud-Speichern fehlgeschlagen', e); setSync('err');
     toast('Speichern in der Cloud fehlgeschlagen – lokal zwischengespeichert. Nächster Versuch beim nächsten Speichern.', 'err');
@@ -878,6 +887,82 @@ function save(){
 }
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden' && saveTimer) flushSave(); });
 window.addEventListener('beforeunload', ev => { if(saveTimer){ flushSave(); ev.preventDefault(); ev.returnValue = ''; } });
+
+/* =========================================================
+   Automatische Sicherung (Firestore: cockpit/{uid}/backups/{id})
+   - täglich: erster Stand des Tages (d-JJJJ-MM-TT), 30 Tage aufbewahrt
+   - vor riskanten Aktionen (Löschen, Import, Demo, Wiederherstellen), 15 aufbewahrt
+   ========================================================= */
+const BACKUP_KEEP_DAILY = 30, BACKUP_KEEP_EVENT = 15;
+let lastBackupDay = '';
+async function createBackup(reason, daily){
+  if(!cloudUser || !cloudReady || !window.Cloud) throw new Error('nicht angemeldet');
+  const now = new Date();
+  const id = daily ? `d-${todayISO()}` : `e-${todayISO()}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  await Cloud.setDoc(Cloud.backupDoc(cloudUser.uid, id), {
+    json: JSON.stringify(state), reason, clientAt: now.toISOString(), createdAt: Cloud.serverTimestamp(),
+    employees: state.employees.length, projects: state.projects.length
+  });
+  pruneBackups();
+  return id;
+}
+async function listBackups(){
+  const qs = await Cloud.getDocs(Cloud.backupCol(cloudUser.uid));
+  return qs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.clientAt || '').localeCompare(a.clientAt || ''));
+}
+async function pruneBackups(){
+  try{
+    const all = await listBackups();
+    const old = all.filter(b => b.id.startsWith('d-')).slice(BACKUP_KEEP_DAILY).concat(all.filter(b => !b.id.startsWith('d-')).slice(BACKUP_KEEP_EVENT));
+    for(const b of old) await Cloud.deleteDoc(Cloud.backupDoc(cloudUser.uid, b.id));
+  }catch(e){ console.warn('Alte Sicherungen konnten nicht entfernt werden', e); }
+}
+/* einmal pro Tag den Stand sichern (beim Öffnen bzw. beim ersten Speichern nach Mitternacht) */
+async function dailyBackup(){
+  const day = todayISO();
+  if(lastBackupDay === day || !cloudReady) return;
+  lastBackupDay = day;
+  try{
+    const s = await Cloud.getDoc(Cloud.backupDoc(cloudUser.uid, `d-${day}`));
+    if(!s.exists()) await createBackup('Tägliche Sicherung', true);
+  }catch(e){ lastBackupDay = ''; console.warn('Tägliche Sicherung fehlgeschlagen', e); }
+}
+/* Sicherung vor riskanter Aktion – bei Fehler wird die Aktion abgebrochen */
+async function safeguard(reason){
+  try{ await createBackup(reason, false); return true; }
+  catch(e){ console.error(e); toast('Sicherung fehlgeschlagen – Vorgang abgebrochen, es wurde nichts verändert', 'err'); return false; }
+}
+function fmtDateTime(isoStr){
+  const d = new Date(isoStr); if(isNaN(d)) return '–';
+  return d.toLocaleDateString('de-CH', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) + ', ' + d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+}
+function downloadJSON(json, name){
+  const blob = new Blob([json], { type: 'application/json' }), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function renderBackupList(box){
+  box.innerHTML = '<p class="hint" style="margin:0">Sicherungen werden geladen …</p>';
+  try{
+    const list = await listBackups();
+    box._list = list;
+    box.innerHTML = list.length ? `<div class="bk-list">${list.map(b => `<div class="bk-row">
+        <span class="ic" style="width:32px;height:32px">${b.id.startsWith('d-') ? I.cal : I.flag}</span>
+        <div class="who"><b>${fmtDateTime(b.clientAt)}</b><small>${esc(b.reason || '')} · ${b.employees ?? '–'} Mitarbeiter · ${b.projects ?? '–'} Projekte</small></div>
+        <button type="button" class="round sm" title="Als JSON herunterladen" data-bk="dl" data-id="${b.id}">${I.down}</button>
+        <button type="button" class="btn btn-sm" data-bk="restore" data-id="${b.id}">Wiederherstellen</button></div>`).join('')}</div>`
+      : '<p class="hint" style="margin:0">Noch keine Sicherungen vorhanden.</p>';
+  }catch(e){
+    console.error(e);
+    box.innerHTML = `<div class="note l-over" style="margin:0">Sicherungen konnten nicht geladen werden (${esc(e.code || e.message)}). Bitte die Firestore-Regeln aktualisieren (Abschnitt „backups“).</div>`;
+  }
+}
+async function restoreBackup(b){
+  if(!(await safeguard('Vor Wiederherstellung'))) return;
+  state = normalize(JSON.parse(b.json)); distCache.clear();
+  save(); closeModal(); render({ anim: true });
+  toast(`Stand vom ${fmtDateTime(b.clientAt)} wiederhergestellt`);
+}
 
 /* Anzeige: Laden / Login / Fehler / App */
 function gate(mode, text){
@@ -904,7 +989,7 @@ function bootCloud(){
 }
 async function onAuthChanged(user){
   if(unsubSnap){ unsubSnap(); unsubSnap = null; }
-  cloudReady = false; cloudUser = user; lastSyncedJson = '';
+  cloudReady = false; cloudUser = user; lastSyncedJson = ''; lastBackupDay = '';
   if(!user){ closeModal(true); gate('login'); return; }
   gate('boot', 'Daten werden geladen …');
   try{
@@ -934,6 +1019,7 @@ async function onAuthChanged(user){
     }, err => { console.error(err); setSync('err'); });
     gate('app'); setSync('ok');
     render({ anim: true });
+    dailyBackup();
   }catch(e){
     console.error('Laden fehlgeschlagen', e);
     gate('error', e && e.code === 'permission-denied'
@@ -1888,6 +1974,10 @@ function settingsModal(){
           <div style="flex:1;min-width:0"><b style="font-weight:500">${esc(cloudUser ? cloudUser.email : '–')}</b><small style="display:block;color:var(--muted);font-size:12px">angemeldet · Daten in Firebase gespeichert</small></div>
           <button type="button" class="btn" data-s="logout">Abmelden</button>
         </div></div>
+      <div class="form-sec"><h4 style="display:flex;justify-content:space-between;align-items:center;gap:10px">Automatische Sicherungen
+          <button type="button" class="btn btn-sm" data-bk="now" style="text-transform:none;letter-spacing:0">${I.check} Jetzt sichern</button></h4>
+        <p class="hint" style="margin:0 0 12px">Täglich beim ersten Öffnen und vor „Alles löschen“, Import, Demo-Daten und Wiederherstellen. Tägliche Sicherungen werden ${BACKUP_KEEP_DAILY} Tage aufbewahrt.</p>
+        <div id="bk-box"></div></div>
       <div class="form-sec"><h4>Daten</h4>
         <p class="hint" style="margin:0 0 12px">Daten werden in der Cloud (Firebase) gespeichert und sind auf jedem Gerät nach der Anmeldung verfügbar. Zusätzliche Sicherung: exportieren.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -1901,9 +1991,28 @@ function settingsModal(){
   });
   const f = ov.querySelector('#sform');
   f.addEventListener('click', ev => {
+    const k = ev.target.closest('[data-bk]');
+    if(k){
+      const box = ov.querySelector('#bk-box');
+      if(k.dataset.bk === 'now'){
+        k.disabled = true;
+        createBackup('Manuelle Sicherung', false).then(() => { toast('Sicherung erstellt'); renderBackupList(box); })
+          .catch(e => toast(`Sicherung fehlgeschlagen (${e.code || e.message})`, 'err')).finally(() => { k.disabled = false; });
+        return;
+      }
+      const bk = (box._list || []).find(x => x.id === k.dataset.id); if(!bk) return;
+      if(k.dataset.bk === 'dl') downloadJSON(bk.json, `auslastung_sicherung_${(bk.clientAt || '').slice(0, 16).replace(/[:T]/g, '-')}.json`);
+      if(k.dataset.bk === 'restore'){
+        const c = openModal({ title: 'Sicherung wiederherstellen?', body: `<p class="muted">Der Stand vom <b style="color:var(--text)">${fmtDateTime(bk.clientAt)}</b> (${bk.employees} Mitarbeiter, ${bk.projects} Projekte) ersetzt die aktuellen Daten. Der aktuelle Stand wird vorher automatisch gesichert.</p>`,
+          foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" id="c-ok">Wiederherstellen</button>` });
+        c.querySelector('#c-ok').addEventListener('click', () => restoreBackup(bk));
+      }
+      return;
+    }
     const b = ev.target.closest('[data-s]'); if(!b) return;
     ({ export: exportData, import: () => document.getElementById('import-file').click(), demo: loadDemo, reset: resetAll, logout })[b.dataset.s]();
   });
+  renderBackupList(ov.querySelector('#bk-box'));
   f.addEventListener('submit', ev => {
     ev.preventDefault();
     const fl = num(f.fullLoad.value), g = num(f.dbGood.value), b = num(f.dbBad.value), errs = [];
@@ -1944,14 +2053,16 @@ function exportData(){
 document.getElementById('import-file').addEventListener('change', ev => {
   const file = ev.target.files[0]; ev.target.value = ''; if(!file) return;
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     try{
       const d = JSON.parse(r.result);
       if(!d || !Array.isArray(d.employees) || !Array.isArray(d.projects)) throw 0;
       // Daten aus der alten Version: Wochenkapazität / Soll-Stunden übernehmen
       d.employees.forEach(e => { if(!e.hours && e.weeklyCapacity) e.hours = Math.round(e.weeklyCapacity * 4.33); });
       d.projects.forEach(p => { if(!p.hours && p.sollStd) p.hours = p.sollStd; });
-      state = normalize(d); save(); closeModal(); ui.view = 'home'; render({ anim: true });
+      const next = normalize(d);
+      if(!(await safeguard('Vor Import'))) return;
+      state = next; save(); closeModal(); ui.view = 'home'; render({ anim: true });
       toast(`${state.employees.length} Mitarbeiter & ${state.projects.length} Projekte importiert`);
     }catch(e){ toast('Import fehlgeschlagen – ungültige Datei', 'err'); }
   };
@@ -1960,10 +2071,11 @@ document.getElementById('import-file').addEventListener('change', ev => {
 function resetAll(){
   const ov = openModal({ title: 'Alle Daten löschen?', body: '<p class="muted">Alle Projekte und Einstellungen werden entfernt. Danach startest du wieder mit deinem Team (Valentin Flury, Egzon Isufi, Mark Mettler, Nicola Jundt) ohne Projekte.</p>',
     foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-danger" id="c-ok">${I.trash} Alles löschen</button>` });
-  ov.querySelector('#c-ok').addEventListener('click', () => { state = seedState(); save(); closeModal(); ui.view = 'home'; render({ anim: true }); toast('Alle Daten gelöscht – Team bleibt erhalten'); });
+  ov.querySelector('#c-ok').addEventListener('click', async () => { if(!(await safeguard('Vor „Alles löschen“'))) return; state = seedState(); save(); closeModal(); ui.view = 'home'; render({ anim: true }); toast('Alle Daten gelöscht – Team bleibt erhalten'); });
 }
 function loadDemo(){
-  const apply = () => {
+  const apply = async () => {
+    if(!(await safeguard('Vor Demo-Daten'))) return;
     const E = [['Anna Keller','Projektleiterin',160],['Marco Brunner','Bauleiter',168],['Sophie Meier','Projektleiterin (80 %)',128],['Lukas Weber','Junior Projektleiter',168],['Elena Rossi','Projektleiterin',140]]
       .map(([name, role, hours], i) => ({ id: 'e' + (i + 1), name, role, hours, color: COLORS[i] }));
     // [Name, PL, Stunden, Baustart, Fertig, Fortschritt, Abschluss-DB (= abgeschlossen)]
