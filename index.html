@@ -589,6 +589,27 @@ button.hc:hover{transform:translateY(-2px);border-color:var(--c)}
 .impact .ih{font-size:10.5px;color:var(--muted);text-align:center;text-transform:uppercase}
 .note{margin-top:12px;padding:10px 14px;border-radius:var(--r-md);font-size:13px;background:var(--cs);color:var(--c)}
 
+/* Login & Laden */
+body.locked .app{display:none}
+.gate{position:fixed;inset:0;z-index:300;display:grid;place-items:center;padding:20px}
+.login-card{width:100%;max-width:420px;padding:34px 30px;animation:rise .6s var(--out) both}
+.login-card .logo{justify-content:center;margin-bottom:18px;min-width:0}
+.login-card h1{font-size:28px;font-weight:300;text-align:center}
+.login-card p.sub{color:var(--muted);text-align:center;margin:6px 0 24px}
+.login-card .btn-primary{width:100%;padding:13px;margin-top:6px}
+.login-card .linkish{display:block;margin:16px auto 0;font-size:13px}
+.spinner{width:42px;height:42px;border-radius:50%;border:3px solid rgba(255,255,255,.1);border-top-color:var(--sage);animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.boot-text{text-align:center;color:var(--muted)}
+.boot-err{max-width:520px;text-align:center}
+.boot-err p{color:var(--muted);margin:10px 0 18px}
+/* Speicherstatus */
+.sync{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap}
+.sync i{width:8px;height:8px;border-radius:50%;background:var(--sage);box-shadow:0 0 8px var(--sage-glow)}
+.sync.saving i{background:var(--amber);box-shadow:0 0 8px var(--amber-glow);animation:fadeIn .8s ease-in-out infinite alternate}
+.sync.err i{background:var(--red);box-shadow:0 0 8px var(--red-glow)}
+@media (max-width:820px){ .sync span{display:none} }
+
 /* Toasts */
 #toast-root{position:fixed;right:22px;bottom:22px;z-index:200;display:flex;flex-direction:column;gap:10px}
 .toast{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--r-lg);background:rgba(36,41,43,.96);border:1px solid var(--line-2);box-shadow:var(--shadow);font-size:13.5px;animation:slideUp .35s var(--out);max-width:380px}
@@ -657,7 +678,7 @@ button.hc:hover{transform:translateY(-2px);border-color:var(--c)}
 }
 </style>
 </head>
-<body>
+<body class="locked">
 <div class="app">
   <header class="top">
     <div class="logo" data-action="nav" data-view="home">
@@ -674,15 +695,64 @@ button.hc:hover{transform:translateY(-2px);border-color:var(--c)}
       <button class="round" data-action="new-project" title="Neues Projekt" id="ic-plus"></button>
       <button class="round" data-action="nav" data-view="capacity" title="Überlastungen" id="ic-bell"></button>
       <button class="round" data-action="settings" title="Einstellungen" id="ic-gear"></button>
+      <span class="sync" id="sync" title="Speicherstatus"><i></i><span>Cloud</span></span>
       <div class="avatars" data-action="nav" data-view="team" id="top-avatars" title="Team"></div>
     </div>
   </header>
   <nav class="rail" id="rail" aria-label="Navigation"></nav>
   <main id="view"></main>
 </div>
+<!-- Anmeldung (Firebase Authentication) -->
+<div class="gate" id="gate">
+  <div id="boot"><div class="spinner"></div><p class="boot-text" id="boot-text">Verbindung wird aufgebaut …</p></div>
+  <section class="glass login-card" id="login" hidden>
+    <div class="logo"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M16 3.5 3.8 13.6a2 2 0 0 0-.8 1.6V26a2.5 2.5 0 0 0 2.5 2.5h6V19a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v9.5h6A2.5 2.5 0 0 0 29 26V15.2a2 2 0 0 0-.8-1.6L16 3.5z"/></svg><span>ProjektCockpit</span></div>
+    <h1>Anmelden</h1>
+    <p class="sub">Team-Auslastung &amp; Projekte</p>
+    <form class="form" id="login-form" novalidate>
+      <div class="errors" hidden></div>
+      <div class="field"><label for="li-email">E-Mail</label><input id="li-email" type="email" autocomplete="username" value="kevin.frei@ckw.ch"></div>
+      <div class="field"><label for="li-pw">Passwort</label><input id="li-pw" type="password" autocomplete="current-password"></div>
+      <button class="btn btn-primary" type="submit" id="li-btn">Anmelden</button>
+    </form>
+    <button class="linkish" type="button" id="li-reset">Passwort vergessen?</button>
+  </section>
+  <section class="glass card boot-err" id="boot-err" hidden></section>
+</div>
 <div id="modal-root"></div>
 <div id="toast-root" aria-live="polite"></div>
 <input type="file" id="import-file" accept="application/json,.json" hidden>
+
+<!-- Firebase: Anmeldung (Authentication) und Datenspeicher (Firestore) -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+// Web-Konfiguration aus der Firebase-Konsole (öffentlich – der Schutz erfolgt über Login + Firestore-Regeln)
+const firebaseConfig = {
+  apiKey: 'AIzaSyBC4ZESoDXDTWjWLCVL104NmbXIlydACbw',
+  authDomain: 'auslastung-f505b.firebaseapp.com',
+  projectId: 'auslastung-f505b',
+  storageBucket: 'auslastung-f505b.firebasestorage.app',
+  messagingSenderId: '558221610443',
+  appId: '1:558221610443:web:0a022bd76d5ebe658f7a4e'
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+await setPersistence(auth, browserLocalPersistence).catch(() => {});   // angemeldet bleiben
+
+window.Cloud = {
+  onAuth: cb => onAuthStateChanged(auth, cb),
+  signIn: (email, pw) => signInWithEmailAndPassword(auth, email, pw),
+  signOut: () => signOut(auth),
+  resetPassword: email => sendPasswordResetEmail(auth, email),
+  docRef: uid => doc(db, 'cockpit', uid),
+  getDoc, setDoc, onSnapshot, serverTimestamp
+};
+window.dispatchEvent(new Event('cloud-ready'));
+</script>
 
 <script>
 "use strict";
@@ -729,7 +799,7 @@ document.getElementById('ic-plus').innerHTML = I.plus;
 document.getElementById('ic-bell').innerHTML = I.bell;
 document.getElementById('ic-gear').innerHTML = I.gear;
 
-let state = load();
+let state = seedState();     // wird nach dem Login aus der Cloud ersetzt
 const ui = {
   view: 'home', empId: null,
   homeOff: 0,                 // gewählter Monat in der Übersicht (0 = aktueller)
@@ -742,16 +812,6 @@ const ui = {
   flash: null
 };
 
-var loadFailed = false;      // (var: wird schon beim Start in load() benötigt) Schutz: gespeicherte Daten nie mit einem leeren Zustand überschreiben
-function load(){
-  let raw = null;
-  try{ raw = localStorage.getItem(STORE_KEY); }catch(e){}
-  if(raw){
-    try{ return normalize(JSON.parse(raw)); }
-    catch(e){ loadFailed = true; console.error('Laden fehlgeschlagen', e); return { employees: [], projects: [], settings: { ...DEFAULTS } }; }
-  }
-  return seedState();
-}
 /* Startbesetzung: eigenes Team, Kevin Frei als Chef (Benutzer des Programms) */
 function seedState(){
   return {
@@ -777,10 +837,145 @@ function normalize(d){
     }))
   };
 }
+/* =========================================================
+   Cloud: Firebase Authentication + Firestore
+   Daten liegen im Dokument  cockpit/{uid}  (Feld "json").
+   Lokaler Speicher dient nur als Zwischenspeicher pro Benutzer.
+   ========================================================= */
+let cloudUser = null;        // angemeldeter Benutzer
+let cloudReady = false;      // erst nach erfolgreichem Laden darf gespeichert werden
+let lastSyncedJson = '';     // zuletzt mit der Cloud abgeglichener Stand
+let saveTimer = null, unsubSnap = null, pendingRemote = null;
+const cacheKey = () => `${STORE_KEY}:${cloudUser ? cloudUser.uid : 'anon'}`;
+
+function setSync(st){
+  const el = document.getElementById('sync'); if(!el) return;
+  el.className = 'sync ' + (st === 'ok' ? '' : st);
+  el.querySelector('span').textContent = st === 'saving' ? 'Speichert …' : st === 'err' ? 'Nicht gespeichert' : 'Gespeichert';
+  el.title = st === 'err' ? 'Speichern in der Cloud fehlgeschlagen – Daten sind lokal zwischengespeichert' : 'Daten sind in der Cloud gespeichert';
+}
+async function flushSave(){
+  clearTimeout(saveTimer); saveTimer = null;
+  if(!cloudReady || !cloudUser || !window.Cloud) return;
+  const json = JSON.stringify(state);
+  if(json === lastSyncedJson){ setSync('ok'); return; }
+  try{
+    await Cloud.setDoc(Cloud.docRef(cloudUser.uid), { json, version: 2, updatedAt: Cloud.serverTimestamp(), by: cloudUser.email || '' });
+    lastSyncedJson = json; setSync('ok');
+  }catch(e){
+    console.error('Cloud-Speichern fehlgeschlagen', e); setSync('err');
+    toast('Speichern in der Cloud fehlgeschlagen – lokal zwischengespeichert. Nächster Versuch beim nächsten Speichern.', 'err');
+  }
+}
 function save(){
   distCache.clear();
-  if(loadFailed){ toast('Gespeicherte Daten konnten nicht gelesen werden – Speichern gesperrt, um nichts zu überschreiben', 'err'); return; }
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){ toast('Speichern im Browser nicht möglich', 'err'); }
+  if(!cloudReady) return;      // nie speichern, bevor die Cloud-Daten geladen sind (schützt vor Überschreiben)
+  pendingRemote = null;        // eigene Änderung hat Vorrang vor zurückgehaltener Fremdänderung
+  try{ localStorage.setItem(cacheKey(), JSON.stringify(state)); }catch(e){}
+  setSync('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 500);
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden' && saveTimer) flushSave(); });
+window.addEventListener('beforeunload', ev => { if(saveTimer){ flushSave(); ev.preventDefault(); ev.returnValue = ''; } });
+
+/* Anzeige: Laden / Login / Fehler / App */
+function gate(mode, text){
+  const g = document.getElementById('gate');
+  document.body.classList.toggle('locked', mode !== 'app');
+  g.hidden = mode === 'app';
+  document.getElementById('boot').hidden = mode !== 'boot';
+  document.getElementById('login').hidden = mode !== 'login';
+  document.getElementById('boot-err').hidden = mode !== 'error';
+  if(mode === 'boot') document.getElementById('boot-text').textContent = text || 'Lade …';
+  if(mode === 'error') document.getElementById('boot-err').innerHTML = `<div class="ic" style="margin:0 auto 12px;color:var(--red)">${I.bell}</div><h3>Keine Verbindung</h3><p>${text}</p>
+    <div style="display:flex;gap:10px;justify-content:center"><button class="btn" onclick="location.reload()">Neu laden</button>${cloudUser ? '<button class="btn" id="err-logout">Abmelden</button>' : ''}</div>`;
+  const lo = document.getElementById('err-logout'); if(lo) lo.onclick = () => Cloud.signOut();
+  if(mode === 'login') setTimeout(() => document.getElementById(document.getElementById('li-email').value ? 'li-pw' : 'li-email').focus(), 50);
+}
+function bootCloud(){
+  gate('boot', 'Verbindung wird aufgebaut …');
+  const start = () => Cloud.onAuth(onAuthChanged);
+  if(window.Cloud) start();
+  else {
+    window.addEventListener('cloud-ready', start, { once: true });
+    setTimeout(() => { if(!window.Cloud) gate('error', 'Firebase konnte nicht geladen werden. Bitte Internetverbindung prüfen – die Seite muss über https (z. B. GitHub Pages) geöffnet werden.'); }, 12000);
+  }
+}
+async function onAuthChanged(user){
+  if(unsubSnap){ unsubSnap(); unsubSnap = null; }
+  cloudReady = false; cloudUser = user; lastSyncedJson = '';
+  if(!user){ closeModal(true); gate('login'); return; }
+  gate('boot', 'Daten werden geladen …');
+  try{
+    const ref = Cloud.docRef(user.uid);
+    const snap = await Cloud.getDoc(ref);
+    if(snap.exists() && snap.data().json){
+      state = normalize(JSON.parse(snap.data().json));
+      lastSyncedJson = snap.data().json;
+      cloudReady = true;
+    } else {
+      // erste Anmeldung: vorhandene lokale Daten übernehmen, sonst Startbesetzung
+      let local = null;
+      try{ local = localStorage.getItem(cacheKey()) || localStorage.getItem(STORE_KEY); }catch(e){}
+      state = local ? normalize(JSON.parse(local)) : seedState();
+      cloudReady = true;
+      save(); await flushSave();
+      toast(local ? 'Bisherige Daten aus diesem Browser in die Cloud übernommen' : 'Willkommen – dein Team ist angelegt');
+    }
+    distCache.clear();
+    // Änderungen von anderen Geräten übernehmen
+    unsubSnap = Cloud.onSnapshot(ref, s => {
+      if(!s.exists() || s.metadata.hasPendingWrites) return;
+      const json = s.data().json;
+      if(!json || json === lastSyncedJson || json === JSON.stringify(state)){ lastSyncedJson = json || lastSyncedJson; return; }
+      if(curOverlay){ pendingRemote = json; return; }      // nicht mitten in einer Bearbeitung austauschen
+      applyRemote(json);
+    }, err => { console.error(err); setSync('err'); });
+    gate('app'); setSync('ok');
+    render({ anim: true });
+  }catch(e){
+    console.error('Laden fehlgeschlagen', e);
+    gate('error', e && e.code === 'permission-denied'
+      ? 'Zugriff verweigert. Bitte die Firestore-Regeln prüfen (Lesen/Schreiben für den angemeldeten Benutzer auf cockpit/{uid}).'
+      : `Daten konnten nicht geladen werden (${esc((e && (e.code || e.message)) || 'unbekannter Fehler')}).`);
+  }
+}
+function applyRemote(json){
+  pendingRemote = null; lastSyncedJson = json;
+  state = normalize(JSON.parse(json)); distCache.clear();
+  render(); toast('Daten wurden von einem anderen Gerät aktualisiert');
+}
+
+/* Login-Formular */
+const AUTH_ERR = {
+  'auth/invalid-credential': 'E-Mail oder Passwort ist falsch.', 'auth/wrong-password': 'E-Mail oder Passwort ist falsch.',
+  'auth/user-not-found': 'E-Mail oder Passwort ist falsch.', 'auth/invalid-email': 'Bitte eine gültige E-Mail-Adresse eingeben.',
+  'auth/too-many-requests': 'Zu viele Versuche. Bitte kurz warten oder das Passwort zurücksetzen.',
+  'auth/network-request-failed': 'Keine Internetverbindung.', 'auth/user-disabled': 'Dieses Konto ist deaktiviert.',
+  'auth/unauthorized-domain': 'Diese Adresse ist in Firebase nicht freigegeben (Authentication → Einstellungen → Autorisierte Domains).'
+};
+document.getElementById('login-form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const f = ev.target, box = f.querySelector('.errors'), btn = document.getElementById('li-btn');
+  const email = document.getElementById('li-email').value.trim(), pw = document.getElementById('li-pw').value;
+  if(!email || !pw){ box.hidden = false; box.textContent = 'Bitte E-Mail und Passwort eingeben.'; return; }
+  if(!window.Cloud){ box.hidden = false; box.textContent = 'Firebase ist noch nicht geladen.'; return; }
+  btn.disabled = true; btn.textContent = 'Anmelden …'; box.hidden = true;
+  try{ await Cloud.signIn(email, pw); document.getElementById('li-pw').value = ''; }
+  catch(e){ box.hidden = false; box.textContent = AUTH_ERR[e.code] || `Anmeldung fehlgeschlagen (${e.code || e.message}).`; }
+  finally{ btn.disabled = false; btn.textContent = 'Anmelden'; }
+});
+document.getElementById('li-reset').addEventListener('click', async () => {
+  const email = document.getElementById('li-email').value.trim(), box = document.querySelector('#login-form .errors');
+  if(!email){ box.hidden = false; box.textContent = 'Bitte zuerst die E-Mail-Adresse eingeben.'; return; }
+  try{ await Cloud.resetPassword(email); toast(`E-Mail zum Zurücksetzen an ${email} gesendet`); }
+  catch(e){ box.hidden = false; box.textContent = AUTH_ERR[e.code] || `Zurücksetzen fehlgeschlagen (${e.code || e.message}).`; }
+});
+async function logout(){
+  if(saveTimer) await flushSave();
+  closeModal(true);
+  try{ await Cloud.signOut(); toast('Abgemeldet'); }catch(e){ toast('Abmelden fehlgeschlagen', 'err'); }
 }
 
 /* =========================================================
@@ -1451,6 +1646,8 @@ function openModal({ title, sub = '', body, foot, size = '' }){
 function closeModal(instant){
   const ov = curOverlay; curOverlay = null;
   if(!ov) return;
+  // während der Bearbeitung zurückgehaltene Änderung von einem anderen Gerät jetzt übernehmen
+  if(pendingRemote) setTimeout(() => { if(pendingRemote && !curOverlay) applyRemote(pendingRemote); }, 350);
   if(instant || REDUCED){ ov.remove(); return; }
   ov.classList.add('leaving'); ov.classList.remove('show');
   ov.querySelector('.modal').animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(.92) translateY(10px)', opacity: 0 }], { duration: 200, easing: 'ease-in', fill: 'forwards' }).onfinish = () => ov.remove();
@@ -1685,8 +1882,14 @@ function settingsModal(){
         ${field('DB gut ab', `<div class="affix"><input name="dbGood" type="number" step="0.5" value="${s.dbGood}"><span>%</span></div>`, 'grün')}
         ${field('DB kritisch unter', `<div class="affix"><input name="dbBad" type="number" step="0.5" value="${s.dbBad}"><span>%</span></div>`, 'rot – dazwischen orange')}
       </div></div>
+      <div class="form-sec"><h4>Konto</h4>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span class="ic">${I.user}</span>
+          <div style="flex:1;min-width:0"><b style="font-weight:500">${esc(cloudUser ? cloudUser.email : '–')}</b><small style="display:block;color:var(--muted);font-size:12px">angemeldet · Daten in Firebase gespeichert</small></div>
+          <button type="button" class="btn" data-s="logout">Abmelden</button>
+        </div></div>
       <div class="form-sec"><h4>Daten</h4>
-        <p class="hint" style="margin:0 0 12px">Daten werden lokal in diesem Browser gespeichert. Für Sicherung oder Weitergabe exportieren.</p>
+        <p class="hint" style="margin:0 0 12px">Daten werden in der Cloud (Firebase) gespeichert und sind auf jedem Gerät nach der Anmeldung verfügbar. Zusätzliche Sicherung: exportieren.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button type="button" class="btn" data-s="export">${I.down} Exportieren</button>
           <button type="button" class="btn" data-s="import">${I.up} Importieren</button>
@@ -1699,7 +1902,7 @@ function settingsModal(){
   const f = ov.querySelector('#sform');
   f.addEventListener('click', ev => {
     const b = ev.target.closest('[data-s]'); if(!b) return;
-    ({ export: exportData, import: () => document.getElementById('import-file').click(), demo: loadDemo, reset: resetAll })[b.dataset.s]();
+    ({ export: exportData, import: () => document.getElementById('import-file').click(), demo: loadDemo, reset: resetAll, logout })[b.dataset.s]();
   });
   f.addEventListener('submit', ev => {
     ev.preventDefault();
@@ -1785,7 +1988,7 @@ function loadDemo(){
     save(); closeModal(); ui.view = 'home'; render({ anim: true }); toast('Demo-Daten geladen');
   };
   if(state.employees.length || state.projects.length){
-    const ov = openModal({ title: 'Demo-Daten laden?', body: '<p class="muted">Dein Team und deine Projekte werden durch ein fiktives Demo-Team ersetzt. Vorher exportieren, wenn du deine Daten behalten willst. Zurück zu deinem Team: Einstellungen → Alles löschen.</p>', foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" id="c-ok">Ersetzen</button>` });
+    const ov = openModal({ title: 'Demo-Daten laden?', body: '<p class="muted"><b style="color:var(--red)">Achtung:</b> Dein Team und alle Projekte <b>in der Cloud</b> werden durch ein fiktives Demo-Team ersetzt – auf allen Geräten. Vorher unbedingt exportieren. Zurück zu deinem Team: Einstellungen → Alles löschen (oder Export wieder importieren).</p>', foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" id="c-ok">Ersetzen</button>` });
     ov.querySelector('#c-ok').addEventListener('click', apply);
   } else apply();
 }
@@ -1913,8 +2116,7 @@ function setupAdd(){
   save(); render({ anim: true }); toast(`${name} hinzugefügt – Projekte erfasst du über +`);
 }
 
-render({ anim: true });
-if(ui.view === 'planner') plannerResults();
+bootCloud();
 </script>
 </body>
 </html>
