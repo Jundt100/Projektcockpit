@@ -1,0 +1,1920 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProjektCockpit – Team-Auslastung</title>
+<style>
+/* =========================================================
+   1. Design Tokens – dunkles Glas-Design mit Salbei-Akzent
+   ========================================================= */
+:root{
+  color-scheme:dark;
+  --bg:#141718;
+  --glass:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.025));
+  --tile:rgba(255,255,255,.045);
+  --tile-2:rgba(255,255,255,.075);
+  --tile-3:rgba(255,255,255,.11);
+  --line:rgba(255,255,255,.08);
+  --line-2:rgba(255,255,255,.15);
+
+  --text:#ECEFEC;
+  --text-2:#C6CCC7;
+  --muted:#939B95;
+  --muted-2:#68716B;
+
+  --sage:#A8D19A;  --sage-2:#86B977;  --sage-soft:rgba(168,209,154,.14);  --sage-glow:rgba(168,209,154,.45);
+  --amber:#EBBE78; --amber-2:#D99A45; --amber-soft:rgba(235,190,120,.15); --amber-glow:rgba(235,190,120,.45);
+  --red:#E8897B;   --red-soft:rgba(232,137,123,.16);  --red-glow:rgba(232,137,123,.45);
+
+  --r-xl:28px; --r-lg:22px; --r-md:16px; --r-sm:12px; --r-pill:999px;
+  --shadow:0 24px 60px rgba(0,0,0,.38);
+  --font:"Inter","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --out:cubic-bezier(.22,1,.36,1);
+  --spring:cubic-bezier(.34,1.56,.64,1);
+}
+
+/* Auslastungsstufen: frei · wenig · gut · voll · überlastet */
+.l-none{--c:var(--muted-2);--cs:rgba(255,255,255,.045);--g:transparent}
+.l-low {--c:#93B98A;--cs:rgba(147,185,138,.11);--g:rgba(147,185,138,.3)}
+.l-good{--c:var(--sage);--cs:var(--sage-soft);--g:var(--sage-glow)}
+.l-full{--c:var(--amber);--cs:var(--amber-soft);--g:var(--amber-glow)}
+.l-over{--c:var(--red);--cs:var(--red-soft);--g:var(--red-glow)}
+
+/* =========================================================
+   2. Basis
+   ========================================================= */
+*{box-sizing:border-box}
+html,body{margin:0;overscroll-behavior-x:none}
+body{
+  font-family:var(--font);color:var(--text);font-size:14px;line-height:1.45;min-height:100vh;
+  background:
+    radial-gradient(1100px 620px at 12% -12%,rgba(168,209,154,.08),transparent 60%),
+    radial-gradient(900px 700px at 105% 105%,rgba(235,190,120,.06),transparent 60%),
+    linear-gradient(180deg,#1a1d1e 0%,#121415 100%);
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,h4,p{margin:0}
+.num{font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+::selection{background:rgba(168,209,154,.3)}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* Glas-Karten */
+.glass{
+  background:var(--glass);border:1px solid var(--line);border-radius:var(--r-xl);
+  backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),var(--shadow);
+}
+.tile{background:var(--tile);border:1px solid rgba(255,255,255,.06);border-radius:var(--r-lg)}
+.card{padding:22px;position:relative;min-width:0}
+.card-h{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.card-h h3{font-size:16px;font-weight:500;letter-spacing:.005em}
+.card-h .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.card-h small{color:var(--muted);font-size:12.5px}
+.ic{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--tile-2);border:1px solid var(--line);flex:none;color:var(--text-2)}
+.ic svg{width:18px;height:18px}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+.divider{height:1px;background:var(--line);margin:20px 0}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:var(--r-pill);
+  padding:10px 18px;border:1px solid var(--line);background:var(--tile-2);cursor:pointer;font-weight:500;
+  transition:background .2s,border-color .2s,transform .15s var(--out),box-shadow .2s;white-space:nowrap;position:relative;overflow:hidden;
+}
+.btn:hover{background:var(--tile-3);border-color:var(--line-2)}
+.btn:active{transform:scale(.98)}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:linear-gradient(180deg,#B9DEAB,#8DBF7E);color:#132013;border-color:transparent;font-weight:600;box-shadow:0 10px 28px rgba(168,209,154,.22)}
+.btn-primary:hover{background:linear-gradient(180deg,#C4E5B7,#97C788);box-shadow:0 12px 32px rgba(168,209,154,.32)}
+.btn-danger{color:var(--red);border-color:rgba(232,137,123,.3);background:var(--red-soft)}
+.btn-sm{padding:7px 13px;font-size:13px}
+.btn.block{width:100%}
+.round{
+  width:42px;height:42px;border-radius:50%;display:inline-grid;place-items:center;flex:none;cursor:pointer;
+  background:var(--tile-2);border:1px solid var(--line);color:var(--text-2);position:relative;
+  transition:background .2s,border-color .2s,transform .2s var(--spring);
+}
+.round:hover{background:var(--tile-3);border-color:var(--line-2);color:var(--text)}
+.round:active{transform:scale(.92)}
+.round svg{width:18px;height:18px}
+.round.sm{width:32px;height:32px}
+.round.sm svg{width:15px;height:15px}
+.round.danger:hover{color:var(--red);border-color:rgba(232,137,123,.4)}
+.badge{position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 3px #1a1d1e}
+
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:var(--r-pill);font-size:12px;font-weight:500;white-space:nowrap;background:var(--tile-2);border:1px solid var(--line);color:var(--text-2)}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--c,var(--muted))}
+.pill.lv{background:var(--cs);color:var(--c);border-color:transparent}
+.pill-glass{display:inline-flex;align-items:center;gap:10px;padding:8px 16px 8px 8px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line);color:var(--text-2);font-size:13px}
+.pill-glass i{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--tile-2);border:1.5px solid rgba(168,209,154,.45);color:var(--sage)}
+.pill-glass i svg{width:15px;height:15px}
+.pill-glass b{color:var(--text);font-weight:500}
+
+/* Schalter */
+.tgl{position:relative;display:inline-block;width:46px;height:26px;cursor:pointer;flex:none}
+.tgl input{position:absolute;opacity:0;width:0;height:0}
+.tgl i{position:absolute;inset:0;border-radius:var(--r-pill);background:rgba(255,255,255,.12);transition:background .25s}
+.tgl i::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#e9ece9;transition:left .35s var(--spring);box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.tgl input:checked + i{background:var(--sage-2)}
+.tgl input:checked + i::after{left:23px}
+
+/* Formulare */
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label{font-size:12px;color:var(--muted);font-weight:500}
+.field small{font-size:11.5px;color:var(--muted-2)}
+.input,.field input,.field select,.field textarea{
+  width:100%;padding:12px 14px;border-radius:var(--r-md);border:1px solid var(--line);
+  background:rgba(255,255,255,.045);outline:none;transition:border-color .2s,box-shadow .2s,background .2s;min-width:0;
+}
+.field textarea{resize:vertical;min-height:70px}
+.field select option{background:#1d2122}
+.input:focus,.field input:focus,.field select:focus,.field textarea:focus{border-color:rgba(168,209,154,.6);box-shadow:0 0 0 4px rgba(168,209,154,.12);background:rgba(255,255,255,.06)}
+.invalid{border-color:var(--red)!important;box-shadow:0 0 0 4px rgba(232,137,123,.12)!important}
+.affix{position:relative}
+.affix input{padding-right:62px}
+.affix span{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
+.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.form{display:flex;flex-direction:column;gap:16px}
+.form-sec{padding:16px;border-radius:var(--r-lg);background:var(--tile);border:1px solid rgba(255,255,255,.05)}
+.form-sec h4{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:12px}
+.errors{padding:10px 14px;border-radius:var(--r-md);background:var(--red-soft);color:var(--red);font-size:13px}
+.errors ul{margin:4px 0 0;padding-left:18px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+
+/* Segment-Umschalter */
+.seg{display:inline-flex;gap:4px;padding:4px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line)}
+.seg button{border:0;background:transparent;padding:7px 14px;border-radius:var(--r-pill);color:var(--muted);cursor:pointer;font-size:13px;font-weight:500;transition:all .25s var(--out)}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--tile-3);color:var(--text);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+
+/* =========================================================
+   3. Shell: Kopfzeile, Navigationsleiste, Inhalt
+   ========================================================= */
+.app{display:grid;grid-template-columns:84px minmax(0,1fr);grid-template-rows:auto 1fr;min-height:100vh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:18px;padding:18px 28px 10px 24px;position:sticky;top:0;z-index:30;
+  background:linear-gradient(180deg,rgba(20,23,24,.92),rgba(20,23,24,.6) 70%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.logo{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:500;letter-spacing:.01em;min-width:190px;cursor:pointer}
+.logo svg{width:30px;height:30px;color:var(--sage)}
+.search{position:relative;flex:0 1 300px}
+.search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--muted)}
+.search input{width:100%;padding:11px 16px 11px 40px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line);outline:none;transition:border-color .2s,background .2s}
+.search input:focus{border-color:rgba(168,209,154,.5);background:var(--tile-2)}
+.search-res{position:absolute;top:calc(100% + 8px);left:0;right:0;padding:6px;border-radius:var(--r-lg);background:rgba(30,34,35,.97);border:1px solid var(--line-2);box-shadow:var(--shadow);z-index:50;max-height:360px;overflow:auto;animation:pop .18s var(--out)}
+.search-res button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;background:none;border-radius:12px;cursor:pointer;text-align:left}
+.search-res button:hover,.search-res button.act{background:var(--tile-2)}
+.search-res small{color:var(--muted);display:block;font-size:12px}
+.search-res .empty{padding:12px;color:var(--muted);font-size:13px}
+.status-pill{
+  display:inline-flex;align-items:center;gap:10px;padding:6px 18px 6px 6px;border-radius:var(--r-pill);cursor:pointer;
+  background:linear-gradient(180deg,rgba(168,209,154,.14),rgba(168,209,154,.05));border:1px solid rgba(168,209,154,.3);color:var(--text-2);font-size:13.5px;
+  transition:border-color .2s,background .2s;margin-left:auto;margin-right:auto
+}
+.status-pill:hover{border-color:rgba(168,209,154,.55)}
+.status-pill .sp-ic{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--sage);color:var(--sage)}
+.status-pill .sp-ic svg{width:16px;height:16px}
+.status-pill b{color:var(--text);font-weight:500}
+.top-actions{display:flex;align-items:center;gap:10px}
+.avatars{display:flex;align-items:center;padding:4px 10px 4px 4px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line);cursor:pointer}
+.avatars .av{margin-left:-8px;box-shadow:0 0 0 2px #1b1e1f}
+.avatars .av:first-child{margin-left:0}
+.avatars .more{margin-left:8px;color:var(--muted);font-size:12px}
+
+.rail{display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 0;position:sticky;top:84px;align-self:start;z-index:25}
+.rail button{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;cursor:pointer;background:var(--tile);border:1px solid var(--line);color:var(--muted);position:relative;transition:all .3s var(--out)}
+.rail button svg{width:19px;height:19px}
+.rail button:hover{color:var(--text);background:var(--tile-2)}
+.rail button.on{background:#ECEFEC;color:#151817;border-color:transparent;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.rail button .tip{position:absolute;z-index:60;left:calc(100% + 12px);top:50%;transform:translateY(-50%) translateX(-6px);opacity:0;pointer-events:none;background:#2a2f30;box-shadow:0 10px 30px rgba(0,0,0,.45);border:1px solid var(--line-2);padding:5px 10px;border-radius:10px;font-size:12px;color:var(--text);white-space:nowrap;transition:all .2s var(--out)}
+.rail button:hover .tip{opacity:1;transform:translateY(-50%)}
+.rail .sep{width:22px;height:1px;background:var(--line);margin:4px 0}
+
+main#view{padding:8px 28px 48px 8px;min-width:0;overflow-x:clip}
+
+/* Begrüssung */
+.greet{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:6px 0 24px}
+.greet p{font-size:20px;font-weight:300;color:var(--muted)}
+.greet h1{font-size:40px;font-weight:300;letter-spacing:-.01em;line-height:1.15}
+.greet .pills{display:flex;gap:10px;flex-wrap:wrap}
+.page-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:6px 0 22px}
+.page-h h1{font-size:34px;font-weight:300;letter-spacing:-.01em;margin-top:4px}
+.page-h p.sub{color:var(--muted);margin-top:6px;max-width:640px}
+.page-h .right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* =========================================================
+   4. Übersicht (Dashboard)
+   ========================================================= */
+.home{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 300px;grid-template-rows:auto auto;gap:18px;align-items:stretch}
+.cA{grid-column:1;grid-row:1/3}
+.cB{grid-column:2;grid-row:1/3;display:flex;flex-direction:column}
+.cC{grid-column:3;grid-row:1}
+.cD{grid-column:3;grid-row:2}
+.team-col{grid-column:4;grid-row:1/3;display:flex;flex-direction:column;gap:12px;padding:18px}
+
+/* Ring */
+.ring{position:relative;flex:none}
+.ring svg{width:100%;height:100%;overflow:visible}
+.ring-track{fill:none;stroke:rgba(255,255,255,.06)}
+.ring-val{fill:none;stroke:var(--c);stroke-linecap:round;filter:drop-shadow(0 0 12px var(--g));animation:ringIn 1.4s var(--out) both}
+.ring-knob{fill:#F2F5F1;stroke:var(--c);stroke-width:3;filter:drop-shadow(0 0 8px var(--g));animation:fadeIn .4s 1.1s both}
+.ring-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.ring-c b{font-size:52px;font-weight:300;letter-spacing:-.02em;line-height:1}
+.ring-c b sup{font-size:20px;font-weight:300;vertical-align:top;margin-left:2px;position:relative;top:6px}
+.ring-c span{font-size:12.5px;color:var(--muted);margin-top:8px}
+@keyframes ringIn{from{stroke-dashoffset:var(--len)}}
+@keyframes fadeIn{from{opacity:0}}
+
+.cA-body{display:flex;flex-direction:column;align-items:center;gap:16px}
+.cA-body .modes{flex-direction:row;padding:4px}
+.cA-body .mode{padding:7px 14px}
+.cA-body .mode i{display:none}
+.cA-body .ring-c b{font-size:44px}
+.ring-wrap{position:relative}
+.ring-chip{position:absolute;top:2px;right:-6px;padding:6px 12px;border-radius:var(--r-pill);background:rgba(30,34,35,.85);border:1px solid var(--line-2);font-size:12px;color:var(--text-2);display:flex;gap:6px;align-items:center}
+.ring-chip svg{width:13px;height:13px;color:var(--sage)}
+.modes{display:flex;flex-direction:column;gap:8px;padding:6px;border-radius:var(--r-lg);background:var(--tile);border:1px solid var(--line)}
+.mode{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 10px;border-radius:14px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;font-size:12.5px;white-space:nowrap;transition:all .25s var(--out)}
+.mode i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line-2)}
+.mode i svg{width:12px;height:12px}
+.mode:hover{color:var(--text)}
+.mode.on{background:var(--tile-3);color:var(--text);border-color:var(--line)}
+.mode.on i{border-color:var(--sage);color:var(--sage)}
+
+.free-tile{padding:16px;display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:end}
+.free-tile .t-label{font-size:12px;color:var(--muted)}
+.free-tile b.big{display:block;font-size:34px;font-weight:300;line-height:1.1;margin-top:4px}
+.free-tile b.big small{font-size:15px;color:var(--muted);margin-left:2px}
+.free-tile .sub{font-size:12px;color:var(--muted)}
+.minichart svg{width:100%;height:auto;display:block;overflow:visible}
+.minichart .lbls{display:flex;justify-content:space-around;font-size:10.5px;color:var(--muted);margin-top:6px}
+
+/* Mitarbeiter-Zeilen (wie Regler) */
+.emp-rows{display:flex;flex-direction:column;gap:12px;overflow:auto;padding-right:2px;max-height:640px}
+.emp-row{padding:14px 16px;cursor:pointer;transition:background .25s,border-color .25s,transform .3s var(--out)}
+.emp-row:hover{background:var(--tile-2);border-color:var(--line-2);transform:translateY(-1px)}
+.er-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.er-top b{font-weight:500;font-size:14.5px}
+.er-top small{display:block;color:var(--muted);font-size:12px}
+.er-val{display:flex;align-items:baseline;gap:6px;margin:8px 0 10px}
+.er-val b{font-size:30px;font-weight:300;line-height:1;color:var(--text)}
+.er-val span{font-size:14px;color:var(--muted)}
+.er-val em{font-style:normal;margin-left:auto;font-size:12px;color:var(--muted)}
+.slider{position:relative;height:6px;border-radius:var(--r-pill);background:rgba(255,255,255,.08)}
+.slider .fill{position:absolute;inset:0 auto 0 0;border-radius:inherit;background:linear-gradient(90deg,rgba(255,255,255,.05),var(--c));box-shadow:0 0 14px var(--g);animation:growW 1s var(--out) both}
+.slider .knob{position:absolute;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:#F2F5F1;border:3px solid var(--c);box-shadow:0 0 10px var(--g);animation:fadeIn .4s .8s both}
+.slider .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:rgba(255,255,255,.25);border-radius:2px}
+.sl-labels{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--muted)}
+@keyframes growW{from{width:0}}
+
+/* 12-Monats-Diagramm */
+.big-num{display:flex;align-items:baseline;gap:6px;margin:-4px 0 4px}
+.big-num b{font-size:44px;font-weight:300;letter-spacing:-.02em;line-height:1}
+.big-num span{color:var(--muted);font-size:14px}
+.chart svg{width:100%;height:auto;display:block;overflow:visible}
+.chart .lbl{fill:var(--muted);font-size:10.5px}
+.ch-bar{fill:var(--cs);stroke:var(--c);stroke-width:1;transform-box:fill-box;transform-origin:bottom;animation:barUp .9s var(--out) both}
+.ch-line{fill:none;stroke:rgba(255,255,255,.55);stroke-width:1.5;stroke-dasharray:3 4}
+.ch-ref{stroke:rgba(255,255,255,.18);stroke-width:1;stroke-dasharray:4 5}
+.ch-ref.over{stroke:rgba(232,137,123,.5)}
+.ch-tag{font-size:10px;fill:var(--muted)}
+@keyframes barUp{from{transform:scaleY(0)}}
+
+/* Arc (Schnellplanung) */
+.arc-wrap{position:relative;display:grid;place-items:center;margin:4px auto 0}
+.arc-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:6px}
+.arc-c b{font-size:44px;font-weight:300;line-height:1;letter-spacing:-.02em}
+.arc-c b small{font-size:18px;color:var(--muted);margin-left:3px}
+.arc-c span{font-size:12px;color:var(--muted);margin-top:8px;max-width:150px}
+.arc-val{fill:none;stroke:var(--c);stroke-linecap:round;filter:drop-shadow(0 0 12px var(--g));transition:stroke-dashoffset .8s var(--out),stroke .4s}
+.q-dates{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.q-dates label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted)}
+.q-dates input{padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);outline:none;font-size:13px}
+.q-dates input:focus{border-color:rgba(168,209,154,.5)}
+.q-ctrl{display:flex;align-items:center;justify-content:center;gap:18px;margin:-6px 0 14px}
+.q-ctrl .round{width:48px;height:48px;font-size:22px}
+.q-best{text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.q-best b{color:var(--text);font-weight:500}
+
+/* Team-Spalte (wie "Rooms & Nodes") */
+.node{padding:14px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;position:relative;cursor:pointer;transition:background .25s,border-color .25s,transform .3s var(--out)}
+.node:hover{background:var(--tile-2);border-color:var(--line-2);transform:translateY(-2px)}
+.node .av{grid-row:1/4}
+.node b{font-weight:500;font-size:14px;padding-right:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node small{color:var(--muted);font-size:12px}
+.node .nd-dot{position:absolute;top:14px;right:14px;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.06);display:grid;place-items:center}
+.node .nd-dot::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--g)}
+.node .bar6{grid-column:1/-1;display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:10px}
+.node .bar6 i{height:22px;border-radius:7px;background:var(--cs);border:1px solid color-mix(in srgb,var(--c) 35%,transparent);position:relative;overflow:hidden}
+.node .bar6 i::after{content:"";position:absolute;left:0;right:0;bottom:0;height:var(--h);background:var(--c);opacity:.55}
+.node .bar6-l{grid-column:1/-1;display:grid;grid-template-columns:repeat(6,1fr);gap:4px;font-size:9.5px;color:var(--muted-2);text-align:center}
+.team-col .card-h{margin-bottom:6px}
+.team-scroll{display:flex;flex-direction:column;gap:12px;overflow:auto;max-height:680px;padding-right:2px}
+
+/* Avatar */
+.av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:14px;color:#151817;flex:none;
+  background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.55),transparent 55%),var(--a,#A8D19A)}
+.av.sm{width:30px;height:30px;font-size:11px}
+.av.lg{width:76px;height:76px;font-size:24px}
+
+/* Heatmap-Zellen */
+.hc{border-radius:12px;padding:8px 4px;text-align:center;background:var(--cs);color:var(--c);border:1px solid color-mix(in srgb,var(--c) 22%,transparent);font-variant-numeric:tabular-nums;transition:transform .2s var(--out),border-color .2s}
+.hc b{display:block;font-size:13.5px;font-weight:600}
+.hc small{display:block;font-size:10.5px;opacity:.8;color:var(--text-2)}
+button.hc{cursor:pointer;width:100%;font:inherit}
+button.hc:hover{transform:translateY(-2px);border-color:var(--c)}
+.hc.with{outline:2px dashed var(--c);outline-offset:-3px}
+
+/* Kapazitätsmatrix */
+.matrix-scroll{overflow-x:auto;padding-bottom:4px}
+.matrix{display:grid;grid-template-columns:minmax(200px,1.3fr) repeat(12,minmax(64px,1fr)) minmax(110px,.8fr);gap:6px;align-items:center;min-width:1100px}
+.matrix .th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:center;padding:4px 0}
+.matrix .th.l{text-align:left}
+.matrix .th.cur{color:var(--sage)}
+.m-name{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;padding:6px;border-radius:14px}
+.m-name:hover{background:var(--tile)}
+.m-name b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-name small{color:var(--muted);font-size:12px}
+.m-free{text-align:right;font-size:12.5px;color:var(--text-2);padding-right:6px}
+.m-free small{display:block;color:var(--muted);font-size:11px}
+.m-sep{grid-column:1/-1;height:1px;background:var(--line);margin:6px 0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);margin-top:16px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:5px;vertical-align:-3px;margin-right:6px;background:var(--cs);border:1px solid var(--c)}
+.month-nav{display:flex;align-items:center;gap:10px;padding:5px;border-radius:var(--r-pill);background:var(--tile);border:1px solid var(--line)}
+.month-nav span{min-width:150px;text-align:center;font-size:13px;color:var(--text-2)}
+
+/* Projekte – Zeitstrahl */
+.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:12px;margin-bottom:18px}
+.toolbar .input{width:auto}
+.toolbar .grow{flex:1 1 220px}
+.gantt-scroll{overflow-x:auto}
+.gantt{--gl:300px;min-width:1100px;position:relative}
+.g-row,.g-group,.g-head{display:grid;grid-template-columns:var(--gl) 1fr;align-items:center;position:relative}
+.g-label{position:sticky;left:0;z-index:3;background:#1c2021;align-self:stretch;display:flex;align-items:center;gap:10px;padding-right:12px;min-width:0}
+.g-track{position:relative;height:44px}
+.g-months{height:32px}
+.g-months span{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.g-body{position:relative}
+.g-grid{position:absolute;inset:0 0 0 var(--gl);pointer-events:none}
+.g-grid i{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.g-today{position:absolute;top:-30px;bottom:0;width:2px;margin-left:-1px;background:var(--amber);box-shadow:0 0 12px var(--amber-glow);z-index:2}
+.g-today em{position:absolute;top:6px;left:6px;background:#1c2021;padding:1px 6px;border-radius:6px;font-style:normal;font-size:10px;font-weight:600;color:var(--amber);letter-spacing:.06em;text-transform:uppercase}
+.g-group{padding:14px 0 6px;border-top:1px solid var(--line);margin-top:6px}
+.g-group .g-label b{font-weight:500}
+.g-gmeta{font-size:12px;color:var(--muted);padding-left:12px}
+.g-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.g-num{font-size:11px;color:var(--muted);padding:3px 8px;border-radius:8px;background:var(--tile-2);flex:none}
+.g-bar{position:absolute;top:8px;height:28px;border-radius:10px;border:1px solid color-mix(in srgb,var(--sage) 50%,transparent);
+  background:linear-gradient(90deg,rgba(168,209,154,.28),rgba(168,209,154,.12));cursor:pointer;display:flex;align-items:center;padding:0 10px;gap:6px;overflow:hidden;
+  font-size:11.5px;color:var(--text);white-space:nowrap;transition:transform .2s var(--out),box-shadow .2s;transform-origin:left;animation:barIn .7s var(--out) both}
+.g-bar:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.g-bar > *{position:relative}
+.g-bar .g-fill{position:absolute;inset:0 auto 0 0;background:rgba(168,209,154,.32);border-radius:inherit}
+.g-bar.closed{opacity:.45;background:rgba(255,255,255,.06);border-color:var(--line-2)}
+.g-bar.closed .g-fill{display:none}
+.g-bar.due{border-color:rgba(232,137,123,.7);background:linear-gradient(90deg,rgba(232,137,123,.25),rgba(232,137,123,.08))}
+.g-bar.future{background:linear-gradient(90deg,rgba(235,190,120,.22),rgba(235,190,120,.08));border-color:rgba(235,190,120,.45)}
+@keyframes barIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+
+/* Projekt-Liste */
+.tbl-wrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;min-width:860px}
+.tbl th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tbl td{padding:12px;border-bottom:1px solid var(--line)}
+.tbl tbody tr{cursor:pointer;transition:background .2s}
+.tbl tbody tr:hover{background:var(--tile)}
+.tbl .r{text-align:right}
+.tbl tr:last-child td{border-bottom:0}
+
+/* Übersicht (neu): Kennzahlen, Mitarbeiter-Liste, Hinweise */
+.dash{display:grid;grid-template-columns:minmax(0,2fr) minmax(330px,1fr);gap:18px;align-items:start}
+.kpis{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.kpi{padding:18px 20px;display:flex;gap:14px;align-items:center;cursor:default}
+.kpi[data-action]{cursor:pointer}
+.kpi[data-action]:hover{border-color:var(--line-2)}
+.kpi .ic{width:46px;height:46px}
+.kpi .ic svg{width:20px;height:20px}
+.kpi span.l{display:block;font-size:12px;color:var(--muted)}
+.kpi b.v{display:block;font-size:30px;font-weight:300;line-height:1.15;letter-spacing:-.01em}
+.kpi small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi.alert{border-color:rgba(232,137,123,.45);background:linear-gradient(180deg,rgba(232,137,123,.14),rgba(232,137,123,.04))}
+.kpi.alert .ic{border-color:rgba(232,137,123,.5);color:var(--red)}
+.kpi.alert b.v{color:var(--red)}
+.side{display:flex;flex-direction:column;gap:18px;min-width:0}
+.main-col{display:flex;flex-direction:column;gap:18px;min-width:0}
+.bottom{display:grid;grid-template-columns:minmax(280px,1fr) minmax(0,1.7fr);gap:18px;align-items:stretch}
+.bottom > .card,.side > .card{grid-column:auto;grid-row:auto}   /* alte Rasterpositionen der früheren Übersicht aufheben */
+.bottom .cA{display:flex;flex-direction:column;justify-content:center}
+
+.ulist-h,.urow{display:grid;grid-template-columns:auto minmax(130px,1.2fr) 96px minmax(250px,2.2fr) minmax(130px,1fr) auto;gap:14px;align-items:center}
+.ulist-h{padding:0 14px 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.ulist-h .mh{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;text-align:center}
+.urow{padding:12px 14px;cursor:pointer;transition:background .25s,border-color .25s,transform .3s var(--out)}
+.urow + .urow{margin-top:8px}
+.urow:hover{background:var(--tile-2);border-color:var(--line-2);transform:translateX(2px)}
+.urow.is-over{border-color:rgba(232,137,123,.45);background:linear-gradient(90deg,rgba(232,137,123,.12),rgba(255,255,255,.03))}
+.urow .who b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.urow .who small{color:var(--muted);font-size:12px}
+.urow .now b{font-size:24px;font-weight:300;color:var(--c);line-height:1}
+.urow .now small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
+.urow .m6{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.urow .m6 .hc{padding:6px 2px;border-radius:9px}
+.urow .m6 .hc b{font-size:11.5px}
+.urow .m6 .hc small{display:none}
+@media (max-width:1100px){ .urow .m6 .hc small{display:block} }
+.urow .st{font-size:12px;color:var(--text-2);line-height:1.3}
+.urow .st b{display:block;font-weight:500;color:var(--c)}
+
+.alerts .al-sec + .al-sec{margin-top:16px}
+.alerts h4{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.al-row{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;transition:background .2s}
+.al-row + .al-row{margin-top:6px}
+.al-row:hover{background:var(--tile-2)}
+.al-row .who{flex:1;min-width:0}
+.al-row .who b{display:block;font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.al-row .who small{display:block;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.al-row .val{font-weight:600;font-size:13px;color:var(--c);white-space:nowrap}
+.all-good{display:flex;gap:12px;align-items:center;padding:14px;border-radius:var(--r-md);background:var(--sage-soft);color:var(--sage)}
+
+/* Stunden Ist / Budget */
+.hrs{display:flex;flex-direction:column;gap:5px;min-width:130px}
+.hrs .top{display:flex;align-items:center;gap:6px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.hrs .top b{font-weight:500;color:var(--c)}
+.hrs .top span{color:var(--muted)}
+.hrs .hb{height:5px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.hrs .hb i{display:block;height:100%;background:var(--c);border-radius:inherit}
+.ist-in{width:72px!important;padding:5px 8px!important;border-radius:9px!important;font-size:12.5px!important;text-align:right;border:1px solid var(--line)!important;background:rgba(255,255,255,.05)!important;outline:none}
+.ist-in:focus{border-color:rgba(168,209,154,.6)!important}
+
+/* Projektleiter-Auswahl im Projektformular */
+.pick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.pick-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-md);border:1px solid var(--line);background:rgba(255,255,255,.035);cursor:pointer;transition:all .2s var(--out)}
+.pick-opt:hover{border-color:var(--line-2);background:var(--tile-2)}
+.pick-opt input{position:absolute;opacity:0;pointer-events:none}
+.pick-opt .po-t{flex:1;min-width:0}
+.pick-opt .po-t b{display:block;font-weight:500;font-size:13.5px}
+.pick-opt .po-t small{display:block;color:var(--muted);font-size:11.5px}
+.pick-opt:has(input:checked){border-color:var(--c);background:var(--cs);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 18%,transparent)}
+.pick-opt.no{opacity:.6}
+.pick-opt.no:has(input:checked){opacity:1}
+.pick-sep{font-size:11.5px;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+.pick-sep::after{content:"";flex:1;height:1px;background:rgba(232,137,123,.3)}
+.pl-locked{display:flex;align-items:center;gap:14px;padding:12px 14px;border-color:color-mix(in srgb,var(--c) 45%,transparent)}
+.pl-locked .who{flex:1;min-width:0}
+.pl-locked .who b{display:block;font-weight:500;font-size:15px}
+.pl-locked .who small{color:var(--muted);font-size:12px}
+.pl-keep{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-bottom:10px}
+.pl-keep b{color:var(--text);font-weight:500}
+.pick.invalid-box{outline:1px solid var(--red);outline-offset:6px;border-radius:12px}
+
+/* Fortschritts-Regler */
+.prog{display:flex;align-items:center;gap:10px;min-width:170px}
+.prog .track{position:relative;flex:1;display:flex;align-items:center}
+.prog input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:var(--r-pill);margin:8px 0;cursor:pointer;outline:none;
+  background:linear-gradient(90deg,var(--sage) 0,var(--sage) var(--v),rgba(255,255,255,.1) var(--v))}
+.prog input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#F2F5F1;border:3px solid var(--sage);box-shadow:0 0 10px var(--sage-glow);transition:transform .2s var(--spring)}
+.prog input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
+.prog input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#F2F5F1;border:3px solid var(--sage)}
+.prog input[type=range]:disabled{opacity:.45;cursor:default}
+.prog .tmark{position:absolute;top:50%;width:2px;height:16px;margin:-8px 0 0 -1px;background:var(--amber);border-radius:2px;pointer-events:none;box-shadow:0 0 6px var(--amber-glow)}
+.prog b{font-weight:500;font-size:12.5px;min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+.prog.behind b{color:var(--amber)}
+.prog.big{min-width:0}
+.prog.big b{font-size:16px;min-width:52px}
+
+/* Abschlüsse */
+.results{display:grid;grid-template-columns:320px minmax(0,1fr) 300px;gap:18px;align-items:start}
+.rank-row{display:grid;grid-template-columns:auto minmax(120px,.8fr) minmax(0,1.6fr) auto;gap:14px;align-items:center;padding:12px 14px;cursor:pointer;transition:background .25s,border-color .25s}
+.rank-row + .rank-row{margin-top:10px}
+.rank-row:hover{background:var(--tile-2);border-color:var(--line-2)}
+.rank-row b{font-weight:500}
+.rank-row small{display:block;color:var(--muted);font-size:12px}
+.rank-row .avg{font-size:22px;font-weight:300;color:var(--c);text-align:right;min-width:86px}
+.dots{position:relative;height:30px;border-radius:10px;background:rgba(255,255,255,.04)}
+.dots .zone{position:absolute;top:0;bottom:0}
+.dots .d{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--g);border:2px solid #1d2122;animation:fadeIn .5s both}
+.dots .am{position:absolute;top:3px;bottom:3px;width:3px;margin-left:-1.5px;border-radius:3px;background:#F2F5F1}
+.scale-l{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted-2);margin:6px 0 0}
+.stat-list{display:flex;flex-direction:column;gap:10px}
+.stat{padding:14px 16px}
+.stat span{display:block;font-size:11.5px;color:var(--muted)}
+.stat b{font-size:22px;font-weight:300}
+.stat small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.due-row{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.due-row + .due-row{margin-top:8px}
+.due-row .who{flex:1;min-width:0}
+.due-row .who b{display:block;font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.due-row .who small{color:var(--muted);font-size:11.5px}
+.closed-box{padding:12px 14px;border-radius:var(--r-md);background:var(--cs);color:var(--c);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.closed-box b{font-size:20px;font-weight:400}
+.closed-box span{color:var(--text-2);font-size:13px}
+
+/* Planer */
+.planner{display:grid;grid-template-columns:380px minmax(0,1fr);gap:18px;align-items:start}
+.cand{padding:16px;display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:14px;align-items:center;transition:background .25s,border-color .25s}
+.cand + .cand{margin-top:12px}
+.cand:hover{background:var(--tile-2);border-color:var(--line-2)}
+.cand .rank{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:13px;background:var(--tile-2);border:1px solid var(--line);color:var(--muted)}
+.cand.best .rank{background:var(--sage);color:#142014;border-color:transparent;box-shadow:0 0 18px var(--sage-glow)}
+.cand .who b{font-weight:500;font-size:15px}
+.cand .who small{display:block;color:var(--muted);font-size:12px}
+.cand .strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(var(--n),minmax(54px,1fr));gap:6px;overflow-x:auto}
+.cand .meta{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:6px}
+.cand .meta b{color:var(--text);font-weight:500}
+.plan-sum{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.plan-sum div{padding:12px 14px;border-radius:var(--r-md);background:var(--tile);border:1px solid rgba(255,255,255,.05)}
+.plan-sum span{display:block;font-size:11.5px;color:var(--muted)}
+.plan-sum b{font-size:20px;font-weight:400}
+.stepper{display:flex;align-items:center;gap:10px}
+.stepper input{text-align:center}
+
+/* Team-Ansicht */
+.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
+.tcard{padding:20px;cursor:pointer;transition:transform .3s var(--out),border-color .3s}
+.tcard:hover{transform:translateY(-3px);border-color:var(--line-2)}
+.tcard-h{display:flex;align-items:center;gap:14px}
+.tcard-h b{font-weight:500;font-size:16px}
+.tcard-h small{display:block;color:var(--muted);font-size:12.5px}
+.tcard-h .right{margin-left:auto;display:flex;gap:6px}
+.strip12{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:16px}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.kv div{padding:10px 12px;border-radius:14px;background:var(--tile);border:1px solid rgba(255,255,255,.05)}
+.kv span{display:block;font-size:11px;color:var(--muted)}
+.kv b{font-weight:500;font-size:15px}
+
+/* Mitarbeiter-Detail */
+.back{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 0;margin-bottom:10px}
+.back:hover{color:var(--text)}
+.back svg{width:16px;height:16px}
+.emp-hero{display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:center}
+.emp-hero h1{font-size:34px;font-weight:300}
+.emp-hero p{color:var(--muted);margin-top:4px}
+.detail{display:grid;grid-template-columns:320px minmax(0,1fr);gap:18px;margin-top:18px;align-items:start}
+
+/* Ersteinrichtung */
+.setup{max-width:860px;display:flex;flex-direction:column;gap:16px}
+.step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:16px}
+.step-no{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:600;background:var(--tile-2);border:1px solid var(--line-2);color:var(--sage)}
+.step.done .step-no{background:var(--sage);color:#142014;border-color:transparent;box-shadow:0 0 18px var(--sage-glow)}
+.step h3{font-size:17px;font-weight:500}
+.step > div > p{color:var(--muted);font-size:13px;margin:4px 0 14px}
+.setup-add{display:grid;grid-template-columns:1.3fr 1.2fr 150px auto;gap:10px;align-items:end}
+.linkish{border:0;background:none;color:var(--sage);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:3px}
+.row-item{display:flex;align-items:center;gap:12px;padding:10px 12px}
+.row-item + .row-item{margin-top:8px}
+.row-item .who{flex:1;min-width:0}
+.row-item .who b{font-weight:500;display:block}
+.row-item .who small{color:var(--muted);font-size:12px}
+
+/* Modal */
+.overlay{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(6,8,8,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);opacity:0;transition:opacity .25s}
+.overlay.show{opacity:1}
+.overlay.leaving{pointer-events:none}
+.modal{width:100%;max-width:580px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;background:linear-gradient(180deg,#22272a,#1a1e1f);border:1px solid var(--line-2);border-radius:var(--r-xl);box-shadow:0 40px 100px rgba(0,0,0,.6)}
+.modal.lg{max-width:820px}
+.modal-h{display:flex;justify-content:space-between;gap:16px;padding:22px 24px 12px}
+.modal-h h2{font-size:20px;font-weight:400}
+.modal-h p{color:var(--muted);font-size:13px;margin-top:3px}
+.modal-b{padding:6px 24px 18px;overflow:auto}
+.modal-f{display:flex;gap:10px;justify-content:flex-end;padding:16px 24px;border-top:1px solid var(--line);flex-wrap:wrap}
+.modal-f .spacer{margin-right:auto}
+.impact{display:grid;grid-template-columns:110px repeat(var(--n),minmax(54px,1fr));gap:6px;align-items:center;overflow-x:auto}
+.impact .il{font-size:12px;color:var(--muted)}
+.impact .ih{font-size:10.5px;color:var(--muted);text-align:center;text-transform:uppercase}
+.note{margin-top:12px;padding:10px 14px;border-radius:var(--r-md);font-size:13px;background:var(--cs);color:var(--c)}
+
+/* Toasts */
+#toast-root{position:fixed;right:22px;bottom:22px;z-index:200;display:flex;flex-direction:column;gap:10px}
+.toast{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--r-lg);background:rgba(36,41,43,.96);border:1px solid var(--line-2);box-shadow:var(--shadow);font-size:13.5px;animation:slideUp .35s var(--out);max-width:380px}
+.toast i{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--sage);color:#142014;font-style:normal;font-weight:700;font-size:12px;flex:none}
+.toast.warn i{background:var(--amber)}
+.toast.err i{background:var(--red)}
+.toast.out{opacity:0;transform:translateY(8px);transition:all .25s}
+
+/* Animationen */
+@keyframes pop{from{opacity:0;transform:translateY(-4px) scale(.98)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}}
+@keyframes rise{from{opacity:0;transform:translateY(18px) scale(.985)}}
+@keyframes viewIn{from{opacity:0;transform:translateX(var(--dx,40px))}}
+.view-in{animation:viewIn .5s var(--out) both}
+.view-in .glass,.view-in .anim{animation:rise .6s var(--out) both;animation-delay:calc(var(--i,0) * 60ms + 60ms)}
+.flash{animation:flash 1.2s var(--out)}
+@keyframes flash{0%{box-shadow:0 0 0 0 var(--sage-glow)}60%{box-shadow:0 0 0 14px rgba(168,209,154,0)}}
+.ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.18;transform:scale(0);pointer-events:none;animation:ripple .6s var(--out) forwards}
+@keyframes ripple{to{transform:scale(1);opacity:0}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0ms!important;transition-duration:.01ms!important}}
+
+/* =========================================================
+   5. Responsive
+   ========================================================= */
+@media (max-width:1360px){
+  .home{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cA{grid-column:1;grid-row:1}
+  .cB{grid-column:2;grid-row:1/3}
+  .cC{grid-column:1;grid-row:2}
+  .cD{grid-column:1;grid-row:3}
+  .team-col{grid-column:2;grid-row:3}
+}
+@media (max-width:1280px){
+  .dash{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .bottom{grid-template-columns:1fr}
+}
+@media (max-width:1100px){
+  .status-pill{display:none}
+  .ulist-h{display:none}
+  .urow{grid-template-columns:auto minmax(0,1fr) auto;row-gap:10px}
+  .urow .m6,.urow .st{grid-column:1/-1}
+  .urow > .round{display:none}
+  .pick{grid-template-columns:1fr}
+  .planner,.detail,.results{grid-template-columns:1fr}
+  .rank-row{grid-template-columns:auto 1fr auto}
+  .rank-row .dots-wrap{grid-column:1/-1}
+}
+@media (max-width:820px){
+  .app{grid-template-columns:1fr}
+  .rail{position:fixed;top:auto;bottom:14px;left:50%;transform:translateX(-50%);flex-direction:row;padding:8px;border-radius:var(--r-pill);background:rgba(28,32,33,.92);border:1px solid var(--line-2);backdrop-filter:blur(16px);z-index:40;box-shadow:var(--shadow)}
+  .rail .sep,.rail .tip{display:none}
+  main#view{padding:6px 16px 110px}
+  .top{padding:14px 16px 8px}
+  .logo{min-width:0}
+  .logo span{display:none}
+  .avatars{display:none}
+  .home{grid-template-columns:1fr}
+  .cA,.cB,.cC,.cD,.team-col{grid-column:1;grid-row:auto}
+  .grid-2,.grid-3,.setup-add{grid-template-columns:1fr}
+  .greet h1{font-size:32px}
+  .cA-body{flex-direction:column}
+  .modes{flex-direction:row;flex-wrap:wrap;justify-content:center}
+  .emp-hero{grid-template-columns:auto 1fr}
+  .emp-hero .right{grid-column:1/-1}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="logo" data-action="nav" data-view="home">
+      <svg viewBox="0 0 32 32" fill="currentColor"><path d="M16 3.5 3.8 13.6a2 2 0 0 0-.8 1.6V26a2.5 2.5 0 0 0 2.5 2.5h6V19a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v9.5h6A2.5 2.5 0 0 0 29 26V15.2a2 2 0 0 0-.8-1.6L16 3.5z"/></svg>
+      <span>ProjektCockpit</span>
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="q" type="search" placeholder="Mitarbeiter oder Projekt suchen …" autocomplete="off">
+      <div class="search-res" id="qres" hidden></div>
+    </div>
+    <button class="status-pill" data-action="nav" data-view="capacity" id="status-pill"></button>
+    <div class="top-actions">
+      <button class="round" data-action="new-project" title="Neues Projekt" id="ic-plus"></button>
+      <button class="round" data-action="nav" data-view="capacity" title="Überlastungen" id="ic-bell"></button>
+      <button class="round" data-action="settings" title="Einstellungen" id="ic-gear"></button>
+      <div class="avatars" data-action="nav" data-view="team" id="top-avatars" title="Team"></div>
+    </div>
+  </header>
+  <nav class="rail" id="rail" aria-label="Navigation"></nav>
+  <main id="view"></main>
+</div>
+<div id="modal-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+
+<script>
+"use strict";
+/* =========================================================
+   Daten & Einstellungen
+   ========================================================= */
+const STORE_KEY = 'projektcockpit-auslastung-v2';
+const DEFAULTS = { userName: '', fullLoad: 85, numberPrefix: '320', defaultHours: 160, dbGood: 20, dbBad: 10 };
+const MONTHS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const MONTHS_L = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const COLORS = ['#A8D19A','#EBBE78','#9CC5D8','#D8A9C9','#C9C3A0','#E8A88F','#B4B8E6','#8FD1BE'];
+const DAY = 86400000;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const I = {
+  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/></svg>',
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>',
+  folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>',
+  compass:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M21.5 20a6.5 6.5 0 0 0-4-6"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  leaf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19c0-8 5-13 15-14-1 10-6 15-14 15"/><path d="M5 19c3-4 6-6 9-7"/></svg>',
+  cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M16 3v4M8 3v4M3.5 10h17"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  bolt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></svg>',
+  chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M4 15l4-4 4 3 7-7"/></svg>',
+  sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4.5h6V7M18 7l-1 13H7L6 7"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  next:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V9M7 14l5-5 5 5M5 4h14"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l2 6.5L20.5 12 14 14l-2 7-2-7-6.5-2L10 9.5z"/></svg>',
+  trophy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/></svg>',
+  flag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
+  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>'
+};
+document.getElementById('ic-plus').innerHTML = I.plus;
+document.getElementById('ic-bell').innerHTML = I.bell;
+document.getElementById('ic-gear').innerHTML = I.gear;
+
+let state = load();
+const ui = {
+  view: 'home', empId: null,
+  homeOff: 0,                 // gewählter Monat in der Übersicht (0 = aktueller)
+  capOff: 0,                  // Startmonat der Kapazitätsmatrix
+  sortLoad: true,
+  projMode: 'timeline', projFilter: 'all', projEmp: 'all', projSearch: '',
+  quick: null,                // Schnellplanung
+  plan: null,                 // Planer
+  resYear: 'all',             // Abschlüsse: Jahresfilter
+  flash: null
+};
+
+var loadFailed = false;      // (var: wird schon beim Start in load() benötigt) Schutz: gespeicherte Daten nie mit einem leeren Zustand überschreiben
+function load(){
+  let raw = null;
+  try{ raw = localStorage.getItem(STORE_KEY); }catch(e){}
+  if(raw){
+    try{ return normalize(JSON.parse(raw)); }
+    catch(e){ loadFailed = true; console.error('Laden fehlgeschlagen', e); return { employees: [], projects: [], settings: { ...DEFAULTS } }; }
+  }
+  return seedState();
+}
+/* Startbesetzung: eigenes Team, Kevin Frei als Chef (Benutzer des Programms) */
+function seedState(){
+  return {
+    employees: ['Valentin Flury', 'Egzon Isufi', 'Mark Mettler', 'Nicola Jundt'].map((name, i) => ({ id: 'pl' + (i + 1), name, role: 'Projektleiter', hours: 160, color: COLORS[i] })),
+    projects: [],
+    settings: { ...DEFAULTS, userName: 'Kevin Frei' }
+  };
+}
+function normalize(d){
+  return {
+    settings: { ...DEFAULTS, ...((d && d.settings) || {}) },
+    employees: (d && Array.isArray(d.employees) ? d.employees : []).filter(e => e && e.id && e.name).map((e, i) => ({
+      id: String(e.id), name: String(e.name), role: String(e.role || ''), hours: num(e.hours) || DEFAULTS.defaultHours, color: e.color || COLORS[i % COLORS.length]
+    })),
+    projects: (d && Array.isArray(d.projects) ? d.projects : []).filter(p => p && p.id).map(p => ({
+      id: String(p.id), number: String(p.number || ''), name: String(p.name || 'Projekt'), employeeId: p.employeeId ? String(p.employeeId) : '',
+      hours: num(p.hours), start: String(p.start || ''), end: String(p.end || ''), note: String(p.note || ''),
+      progress: Math.max(0, Math.min(100, Math.round(num(p.progress)))),
+      istStd: Math.max(0, num(p.istStd)),
+      closed: !!p.closed, closedAt: String(p.closedAt || ''),
+      finalDB: p.finalDB === '' || p.finalDB == null || !isFinite(+p.finalDB) ? null : +p.finalDB,
+      closeNote: String(p.closeNote || '')
+    }))
+  };
+}
+function save(){
+  distCache.clear();
+  if(loadFailed){ toast('Gespeicherte Daten konnten nicht gelesen werden – Speichern gesperrt, um nichts zu überschreiben', 'err'); return; }
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){ toast('Speichern im Browser nicht möglich', 'err'); }
+}
+
+/* =========================================================
+   Helfer
+   ========================================================= */
+function num(v){ const n = parseFloat(String(v ?? '').replace(/['\s]/g, '').replace(',', '.')); return isFinite(n) ? n : 0; }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, isFinite(v) ? v : 0));
+const pad = n => String(n).padStart(2, '0');
+const parseD = s => new Date(s + 'T00:00:00');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const todayISO = () => iso(today0());
+const mKey = (y, m) => `${y}-${pad(m + 1)}`;
+const fmtH = v => `${Math.round(v || 0).toLocaleString('de-CH')} h`;
+const fmtP = v => `${Math.round(v || 0)} %`;
+const fmtDate = s => s ? parseD(s).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '–';
+const initials = n => String(n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const empById = id => state.employees.find(e => e.id === id) || null;
+const projById = id => state.projects.find(p => p.id === id) || null;
+const S = () => state.settings;
+function avatar(e, cls = ''){ return `<span class="av ${cls}" style="--a:${e ? e.color : '#666'}">${e ? esc(initials(e.name)) : '?'}</span>`; }
+
+/* Monatsliste ab heute + Offset */
+function months(offset, n){
+  const t = today0(), out = [];
+  for(let i = 0; i < n; i++){
+    const d = new Date(t.getFullYear(), t.getMonth() + offset + i, 1);
+    out.push({ key: mKey(d.getFullYear(), d.getMonth()), y: d.getFullYear(), m: d.getMonth(), date: d,
+      label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, short: MONTHS[d.getMonth()], long: `${MONTHS_L[d.getMonth()]} ${d.getFullYear()}`,
+      current: offset + i === 0 });
+  }
+  return out;
+}
+const curKey = () => { const t = today0(); return mKey(t.getFullYear(), t.getMonth()); };
+
+/* =========================================================
+   Auslastungs-Berechnung
+   Die Projektleiter-Stunden eines Projekts werden gleichmässig auf alle
+   Arbeitstage (Mo–Fr) zwischen Baustart und Fertigstellung verteilt.
+   ========================================================= */
+const distCache = new Map();
+function projectMonths(p){
+  const k = `${p.start}|${p.end}|${p.hours}|${p.closed ? p.closedAt : ''}`;
+  if(distCache.has(k)) return distCache.get(k);
+  const map = {};
+  if(p.start && p.end && p.hours > 0){
+    let a = parseD(p.start), b = parseD(p.end);
+    if(b < a) [a, b] = [b, a];
+    const counts = {}; let total = 0;
+    for(let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)){
+      const wd = d.getDay(); if(wd === 0 || wd === 6) continue;
+      const key = mKey(d.getFullYear(), d.getMonth()); counts[key] = (counts[key] || 0) + 1; total++;
+    }
+    if(!total){ counts[mKey(a.getFullYear(), a.getMonth())] = 1; total = 1; }
+    for(const key in counts) map[key] = p.hours * counts[key] / total;
+    // Abgeschlossen: Stunden nach dem Abschlussmonat belasten niemanden mehr
+    if(p.closed && p.closedAt){ const ck = p.closedAt.slice(0, 7); for(const key in map) if(key > ck) delete map[key]; }
+  }
+  distCache.set(k, map);
+  return map;
+}
+/* gebuchte Stunden eines Mitarbeiters im Monat · opts.extra: zusätzliches (geplantes) Projekt, opts.excludeId */
+function load_(e, key, opts = {}){
+  let h = 0;
+  for(const p of state.projects){ if(p.employeeId === e.id && p.id !== opts.excludeId) h += projectMonths(p)[key] || 0; }
+  if(opts.extra) h += projectMonths(opts.extra)[key] || 0;
+  return h;
+}
+function util(e, key, opts){ return e.hours > 0 ? load_(e, key, opts) / e.hours * 100 : 0; }
+function lvl(u){ u = Math.round(u); if(u <= 0) return 'none'; if(u > 100) return 'over'; if(u >= S().fullLoad) return 'full'; if(u >= 50) return 'good'; return 'low'; }
+const LVL = { none: 'frei', low: 'wenig ausgelastet', good: 'gut ausgelastet', full: 'voll', over: 'überlastet' };
+function teamMonth(key){
+  let loadH = 0, cap = 0;
+  state.employees.forEach(e => { loadH += load_(e, key); cap += e.hours; });
+  return { load: loadH, cap, util: cap ? loadH / cap * 100 : 0, free: Math.max(cap - loadH, 0) };
+}
+/* ab wann dauerhaft Kapazität frei ist: Monat nach dem letzten "vollen" Monat (Blick 24 Monate) */
+function freeFrom(e){
+  const ms = months(0, 24);
+  let last = -1;
+  ms.forEach((x, i) => { if(Math.round(util(e, x.key)) >= S().fullLoad) last = i; });
+  if(last < 0) return 'ab sofort';
+  if(last >= ms.length - 1) return 'nicht in 24 Mt.';
+  return `ab ${ms[last + 1].long}`;
+}
+function projStatus(p){
+  if(p.closed) return 'closed';
+  const t = todayISO();
+  if(p.end && p.end < t) return 'due';          // Enddatum vorbei, aber noch nicht abgeschlossen
+  if(p.start && p.start > t) return 'future';
+  return 'run';
+}
+const PSTAT = { run: 'Laufend', future: 'Geplant', due: 'Abschliessen', closed: 'Abgeschlossen' };
+const PSTAT_LV = { run: 'good', future: 'full', due: 'over', closed: 'none' };
+/* verstrichene Zeit in % (für Vergleich mit dem Fortschritt) */
+function timePct(p){
+  if(!p.start || !p.end) return null;
+  const a = parseD(p.start), b = parseD(p.end), t = today0();
+  if(b <= a) return t >= b ? 100 : 0;
+  return clamp((t - a) / (b - a) * 100);
+}
+/* Aufgewendete PL-Stunden vs. Budget: over = mehr als budgetiert, warn = Stunden laufen dem Fortschritt davon */
+function hoursState(p){
+  if(!(p.hours > 0) || !(p.istStd > 0)) return 'ok';
+  const r = p.istStd / p.hours * 100;
+  if(r > 100) return 'over';
+  if(!p.closed && r > p.progress + 15) return 'warn';
+  return 'ok';
+}
+const HSL = { ok: 'good', warn: 'full', over: 'over' };
+function hrsCell(p, editable){
+  const r = p.hours > 0 ? p.istStd / p.hours * 100 : 0, s = hoursState(p);
+  return `<div class="hrs l-${p.istStd > 0 ? HSL[s] : 'none'}" title="${fmtH(p.istStd)} von ${fmtH(p.hours)} aufgewendet (${fmtP(r)})${s === 'warn' ? ' – mehr Stunden verbraucht als Fortschritt' : s === 'over' ? ' – Budget überschritten' : ''}">
+    <div class="top">${editable ? `<input class="ist-in" type="number" min="0" step="1" value="${p.istStd || ''}" placeholder="0" data-ist="${p.id}" aria-label="Aufgewendete Stunden">` : `<b>${fmtH(p.istStd)}</b>`}<span>/ ${fmtH(p.hours)}</span><b data-ist-p="${p.id}" style="margin-left:auto">${p.istStd > 0 ? fmtP(r) : ''}</b></div>
+    <div class="hb"><i style="width:${clamp(r)}%"></i></div></div>`;
+}
+/* DB-Bewertung abgeschlossener Projekte */
+function dbLvl(db){ if(db == null || !isFinite(db)) return 'none'; return db >= S().dbGood ? 'good' : db >= S().dbBad ? 'full' : 'over'; }
+const DBL = { good: 'gut', full: 'mittel', over: 'kritisch', none: '–' };
+const fmtDB = v => v == null || !isFinite(v) ? '–' : `${v.toLocaleString('de-CH', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
+const closedOf = list => list.filter(p => p.closed && p.finalDB != null);
+const avgDB = list => { const c = closedOf(list); return c.length ? c.reduce((s, p) => s + p.finalDB, 0) / c.length : null; };
+/* Fortschritts-Regler mit Markierung der verstrichenen Zeit */
+function progSlider(p){
+  const tp = timePct(p), behind = !p.closed && tp != null && tp - p.progress > 15;
+  return `<div class="prog ${behind ? 'behind' : ''}" title="Fortschritt ${p.progress} % · Zeit verstrichen ${tp == null ? '–' : Math.round(tp) + ' %'}">
+    <span class="track"><input type="range" min="0" max="100" step="5" value="${p.progress}" data-progress="${p.id}" style="--v:${p.progress}%" ${p.closed ? 'disabled' : ''} aria-label="Fortschritt ${esc(p.name)}">
+    ${tp != null && !p.closed ? `<i class="tmark" style="left:${tp}%"></i>` : ''}</span>
+    <b data-prog-l="${p.id}">${p.progress} %</b></div>`;
+}
+function empProjects(e){ return state.projects.filter(p => p.employeeId === e.id); }
+function nextNumber(){
+  const pre = S().numberPrefix; let max = 0;
+  state.projects.forEach(p => { if(p.number.startsWith(pre)){ const r = p.number.slice(pre.length); if(/^\d+$/.test(r)) max = Math.max(max, +r); } });
+  return pre + String(max + 1).padStart(3, '0');
+}
+function workMonths(p){ const m = projectMonths(p); return Object.keys(m).length; }
+
+/* Kandidaten für ein neues Projekt bewerten ("Wer macht was?") */
+function rankCandidates(draft, excludeId){
+  const keys = Object.keys(projectMonths(draft)).sort();
+  return state.employees.map(e => {
+    const d = { ...draft, employeeId: e.id, id: '__draft' };
+    const rows = keys.map(k => { const base = util(e, k, { excludeId }), w = util(e, k, { excludeId, extra: d }); return { key: k, base, with: w, load: load_(e, k, { excludeId, extra: d }) }; });
+    const peak = rows.length ? Math.max(...rows.map(r => r.with)) : 0;
+    const basePeak = rows.length ? Math.max(...rows.map(r => r.base)) : 0;
+    const free = keys.reduce((s, k) => s + Math.max(e.hours - load_(e, k, { excludeId }), 0), 0);
+    const verdict = peak <= S().fullLoad ? 'good' : peak <= 100 ? 'full' : 'over';
+    return { e, rows, peak, basePeak, free, verdict };
+  }).sort((a, b) => a.peak - b.peak || b.free - a.free);
+}
+const VERDICT = { good: 'passt gut', full: 'knapp', over: 'überlastet' };
+
+/* =========================================================
+   Grafiken (SVG)
+   ========================================================= */
+function ring(pct, label, sub, size = 236){
+  const st = 16, r = (size - st) / 2 - 8, cx = size / 2, c = 2 * Math.PI * r, p = clamp(pct) / 100;
+  const ang = (-90 + 360 * p) * Math.PI / 180, kx = cx + r * Math.cos(ang), ky = cx + r * Math.sin(ang);
+  return `<div class="ring l-${lvl(pct)}" style="width:${size}px;height:${size}px">
+    <svg viewBox="0 0 ${size} ${size}">
+      <circle cx="${cx}" cy="${cx}" r="${r}" class="ring-track" style="stroke-width:${st}"/>
+      ${p > 0 ? `<circle cx="${cx}" cy="${cx}" r="${r}" class="ring-val" transform="rotate(-90 ${cx} ${cx})" style="stroke-width:${st};stroke-dasharray:${c};stroke-dashoffset:${c * (1 - p)};--len:${c}"/>
+      <circle cx="${kx}" cy="${ky}" r="${st / 2 + 4}" class="ring-knob"/>` : ''}
+    </svg>
+    <div class="ring-c"><b>${label}</b><span>${sub}</span></div></div>`;
+}
+/* 3/4-Bogen wie beim Klima-Regler */
+function arc(pct, inner, size = 230, cls){
+  const st = 14, r = (size - st) / 2 - 6, cx = size / 2, c = 2 * Math.PI * r, span = .75 * c, p = clamp(pct) / 100;
+  const ang = (135 + 270 * p) * Math.PI / 180, kx = cx + r * Math.cos(ang), ky = cx + r * Math.sin(ang);
+  return `<div class="arc-wrap l-${cls || lvl(pct)}" style="width:${size}px;height:${size * .86}px">
+    <svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px;position:absolute;top:0">
+      <defs><linearGradient id="arcg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="rgba(255,255,255,.08)"/><stop offset="1" stop-color="var(--c)"/></linearGradient></defs>
+      <circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="${st}" stroke-linecap="round" transform="rotate(135 ${cx} ${cx})" style="stroke-dasharray:${span} ${c}"/>
+      <circle cx="${cx}" cy="${cx}" r="${r}" class="arc-val" stroke-width="${st}" transform="rotate(135 ${cx} ${cx})" style="stroke:url(#arcg);stroke-dasharray:${span} ${c};stroke-dashoffset:${span * (1 - p)}"/>
+      ${p > 0 ? `<circle cx="${kx}" cy="${ky}" r="${st / 2 + 4}" class="ring-knob"/>` : ''}
+    </svg>
+    <div class="arc-c">${inner}</div></div>`;
+}
+/* Team-Auslastung über 12 Monate (Balken + Stufenlinie) */
+function teamChart(ms){
+  const W = 420, H = 170, L = 6, R = 30, T = 12, B = 24, n = ms.length, bw = (W - L - R) / n;
+  const us = ms.map(m => teamMonth(m.key).util), maxU = Math.max(120, ...us) * 1.05;
+  const Y = u => T + (1 - Math.min(u, maxU) / maxU) * (H - T - B);
+  let g = `<defs><pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="2.5" height="6" fill="rgba(232,137,123,.6)"/></pattern></defs>`;
+  g += `<line x1="${L}" x2="${W - R}" y1="${Y(100)}" y2="${Y(100)}" class="ch-ref over"/><text x="${W - R + 4}" y="${Y(100) + 3}" class="ch-tag">100%</text>`;
+  g += `<line x1="${L}" x2="${W - R}" y1="${Y(S().fullLoad)}" y2="${Y(S().fullLoad)}" class="ch-ref"/><text x="${W - R + 4}" y="${Y(S().fullLoad) + 3}" class="ch-tag">${S().fullLoad}%</text>`;
+  let path = '';
+  us.forEach((u, i) => {
+    const x = L + i * bw, y = Y(u);
+    g += `<rect x="${x + 4}" y="${y}" width="${bw - 8}" height="${H - B - y}" rx="5" class="ch-bar l-${lvl(u)}" style="animation-delay:${i * 40}ms;${u > 100 ? 'fill:url(#hatch)' : ''}"><title>${ms[i].long}: ${fmtP(u)}</title></rect>`;
+    path += (i ? `H${x} V${y} ` : `M${x} ${y} `) + `H${x + bw} `;
+    if(i % 2 === 0) g += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" class="lbl">${ms[i].short}</text>`;
+  });
+  g += `<path d="${path}" class="ch-line"/>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}">${g}</svg></div>`;
+}
+/* freie Team-Stunden der nächsten 6 Monate */
+function freeChart(ms){
+  const W = 260, H = 110, n = ms.length, bw = W / n, fs = ms.map(m => teamMonth(m.key).free), max = Math.max(...fs, 1);
+  let g = `<defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A8D19A" stop-opacity=".75"/><stop offset="1" stop-color="#A8D19A" stop-opacity=".08"/></linearGradient></defs>`;
+  fs.forEach((f, i) => {
+    const h = Math.max(4, f / max * (H - 8)), x = i * bw;
+    g += `<rect x="${x + 3}" y="${H - h}" width="${bw - 6}" height="${h}" rx="6" fill="url(#fg)" class="ch-bar l-good" style="stroke:none;animation-delay:${i * 50}ms"><title>${ms[i].long}: ${fmtH(f)} frei</title></rect>`;
+  });
+  return `<div class="minichart"><svg viewBox="0 0 ${W} ${H}">${g}</svg><div class="lbls">${ms.map(m => `<span>${m.short}</span>`).join('')}</div></div>`;
+}
+function heat(u, hours, label){
+  return `<div class="hc l-${lvl(u)}" title="${label ? label + ': ' : ''}${fmtH(hours)} · ${fmtP(u)}"><b>${u > 0 ? fmtP(u) : '–'}</b><small>${label || fmtH(hours)}</small></div>`;
+}
+
+/* =========================================================
+   Rendering
+   ========================================================= */
+const NAV = [['home', I.home, 'Übersicht'], ['capacity', I.grid, 'Kapazität'], ['projects', I.folder, 'Projekte'], ['results', I.trophy, 'Abschlüsse & DB'], ['planner', I.compass, 'Wer macht was?'], ['team', I.users, 'Team']];
+function renderRail(){
+  const active = ui.view === 'employee' ? 'team' : ui.view;
+  document.getElementById('rail').innerHTML = NAV.map(([k, ic, l], i) => `${i === 5 ? '<span class="sep"></span>' : ''}<button class="${active === k ? 'on' : ''}" data-action="nav" data-view="${k}" aria-label="${l}">${ic}<span class="tip">${l}</span></button>`).join('')
+    + `<span class="sep"></span><button data-action="settings" aria-label="Einstellungen">${I.gear}<span class="tip">Einstellungen</span></button>`;
+}
+function renderTop(){
+  const m = months(0, 1)[0], t = teamMonth(m.key);
+  document.getElementById('status-pill').innerHTML = state.employees.length
+    ? `<span class="sp-ic">${I.leaf}</span><span>Team ${m.long}: <b>${fmtP(t.util)}</b> · ${fmtH(t.free)} frei</span>`
+    : `<span class="sp-ic">${I.leaf}</span><span>Noch kein Team erfasst</span>`;
+  const over = state.employees.filter(e => months(0, 3).some(x => util(e, x.key) > 100)).length;
+  const due = state.projects.filter(p => projStatus(p) === 'due').length;
+  const bell = document.getElementById('ic-bell');
+  bell.innerHTML = I.bell + (over || due ? '<i class="badge"></i>' : '');
+  bell.dataset.view = due ? 'results' : 'capacity';
+  bell.title = [over ? `${over} Mitarbeiter in den nächsten 3 Monaten überlastet` : '', due ? `${due} Projekt(e) abzuschliessen` : ''].filter(Boolean).join(' · ') || 'Keine Hinweise';
+  const es = state.employees;
+  document.getElementById('top-avatars').innerHTML = es.slice(0, 3).map(e => avatar(e, 'sm')).join('') + (es.length > 3 ? `<span class="more">+${es.length - 3}</span>` : es.length ? '' : `<span class="more" style="margin:0 4px">${I.user}</span>`);
+}
+const VIEWS = { home: renderHome, capacity: renderCapacity, projects: renderProjects, results: renderResults, planner: renderPlanner, team: renderTeam, employee: renderEmployee };
+function render(opts = {}){
+  if(ui.view === 'employee' && !empById(ui.empId)) ui.view = 'team';
+  renderRail(); renderTop();
+  const v = document.getElementById('view');
+  v.innerHTML = VIEWS[ui.view]();
+  const root = v.firstElementChild;
+  if(root && opts.anim && !REDUCED){
+    root.style.setProperty('--dx', (opts.dir || 1) * 40 + 'px');
+    root.classList.add('view-in');
+    root.querySelectorAll('.glass, .anim').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 10)));
+    setTimeout(() => root.classList.remove('view-in'), 1400);
+  }
+  if(ui.view === 'planner') plannerResults();
+  if(ui.flash){ v.querySelectorAll(`[data-flash="${ui.flash}"]`).forEach(el => el.classList.add('flash')); ui.flash = null; }
+  const gs = v.querySelector('.gantt-scroll'), td = gs && gs.querySelector('.g-today');
+  if(gs && td) gs.scrollLeft = Math.max(0, td.offsetLeft - gs.clientWidth * .45);
+}
+function go(view, patch = {}){
+  const order = ['home', 'capacity', 'projects', 'results', 'planner', 'team', 'employee'];
+  const dir = order.indexOf(view) >= order.indexOf(ui.view) ? 1 : -1;
+  Object.assign(ui, { view }, patch);
+  render({ anim: true, dir });
+  window.scrollTo({ top: 0 });
+}
+
+/* ---------- Übersicht ---------- */
+function greeting(){ const h = new Date().getHours(); return h < 11 ? 'Guten Morgen' : h < 17 ? 'Guten Tag' : 'Guten Abend'; }
+function renderHome(){
+  if(!state.employees.length) return renderSetup();
+  const ms4 = months(0, 4), sel = ms4[ui.homeOff], t = teamMonth(sel.key);
+  const running = state.projects.filter(p => projStatus(p) === 'run').length;
+  const dueN = state.projects.filter(p => projStatus(p) === 'due').length;
+  const starts = state.projects.filter(p => p.start && p.start.startsWith(sel.key)).length;
+  const ms6 = months(0, 6);
+  // pro Mitarbeiter: aktueller Monat + nächste 6 Monate; überlastete zuerst
+  const emps = state.employees.map(e => {
+    const next = ms6.map(m => ({ m, u: util(e, m.key), h: load_(e, m.key) }));
+    return { e, u: util(e, sel.key), h: load_(e, sel.key), next, peak: Math.max(...next.map(x => x.u)), overMonths: next.filter(x => x.u > 100) };
+  }).sort((a, b) => (b.overMonths.length > 0) - (a.overMonths.length > 0) || b.peak - a.peak);
+  const overloaded = emps.filter(x => x.overMonths.length);
+  const hourIssues = state.projects.filter(p => !p.closed && hoursState(p) !== 'ok').sort((a, b) => b.istStd / b.hours - a.istStd / a.hours);
+  const dueList = state.projects.filter(p => projStatus(p) === 'due');
+  const ms12 = months(0, 12), us12 = ms12.map(m => teamMonth(m.key).util), avg12 = us12.reduce((a, b) => a + b, 0) / 12;
+  const overMonths = us12.filter(u => u > 100).length;
+
+  // Schnellplanung
+  if(!ui.quick){ const t0 = today0(); ui.quick = { hours: 120, start: iso(new Date(t0.getFullYear(), t0.getMonth() + 1, 1)), end: iso(new Date(t0.getFullYear(), t0.getMonth() + 4, 0)) }; }
+  const q = ui.quick, cands = rankCandidates({ ...q, id: '__q' }), best = cands[0];
+
+  return `<div>
+  <div class="greet">
+    <div><p>${greeting()},</p><h1>${esc(S().userName || 'willkommen')}</h1></div>
+    <div class="pills">
+      <span class="pill-glass"><i>${I.folder}</i><b>${running}</b> laufende Projekte</span>
+      <span class="pill-glass"><i>${I.bolt}</i><b>${starts}</b> Baustart${starts === 1 ? '' : 's'} im ${sel.long}</span>
+      <button class="pill-glass" style="cursor:pointer" data-action="nav" data-view="results"><i>${I.trophy}</i>Ø DB <b>${fmtDB(avgDB(state.projects))}</b>${dueN ? ` · <b style="color:var(--red)">${dueN}</b> abzuschliessen` : ''}</button>
+    </div>
+  </div>
+
+  <div class="dash">
+    <!-- Kennzahlen -->
+    <div class="kpis">
+      <div class="glass kpi l-${lvl(t.util)}" data-action="nav" data-view="capacity"><span class="ic">${I.users}</span><div style="min-width:0"><span class="l">Team-Auslastung ${sel.long}</span><b class="v num" style="color:var(--c)">${fmtP(t.util)}</b><small>${fmtH(t.load)} von ${fmtH(t.cap)} gebucht</small></div></div>
+      <div class="glass kpi"><span class="ic">${I.clock}</span><div style="min-width:0"><span class="l">Freie Stunden ${sel.short}</span><b class="v num">${fmtH(t.free)}</b><small>im ganzen Team</small></div></div>
+      <div class="glass kpi ${overloaded.length ? 'alert' : ''}" data-action="nav" data-view="capacity"><span class="ic">${I.bolt}</span><div style="min-width:0"><span class="l">Überlastet (6 Monate)</span><b class="v num">${overloaded.length ? overloaded.length + ' MA' : 'keiner'}</b><small>${overloaded.length ? overloaded.map(x => esc(x.e.name.split(' ')[0])).join(', ') : 'alle unter 100 %'}</small></div></div>
+      <div class="glass kpi l-${dbLvl(avgDB(state.projects))}" data-action="nav" data-view="results"><span class="ic">${I.trophy}</span><div style="min-width:0"><span class="l">Ø DB abgeschlossen</span><b class="v num" style="color:${avgDB(state.projects) == null ? 'inherit' : 'var(--c)'}">${fmtDB(avgDB(state.projects))}</b><small>${closedOf(state.projects).length} Projekte</small></div></div>
+    </div>
+
+    <!-- linke Spalte: Mitarbeiter-Auslastung (Überlastete zuerst) + Team gesamt -->
+    <div class="main-col">
+    <section class="glass card">
+      <div class="card-h"><span class="ic">${I.sliders}</span><h3>Auslastung der Projektleiter</h3><span class="right"><small>überlastete zuerst</small></span></div>
+      <div class="ulist-h"><span style="width:42px"></span><span>Mitarbeiter</span><span>${sel.short}</span><div class="mh">${ms6.map(m => `<span>${m.short}</span>`).join('')}</div><span>Status</span><span style="width:32px"></span></div>
+      ${emps.map(({ e, u, h, next, overMonths }) => `<div class="tile urow l-${lvl(u)} ${overMonths.length ? 'is-over' : ''}" data-action="open-emp" data-id="${e.id}">
+        ${avatar(e)}
+        <div class="who"><b>${esc(e.name)}</b><small>${esc(e.role || '—')} · ${fmtH(e.hours)}/Mt.</small></div>
+        <div class="now"><b class="num">${fmtP(u)}</b><small>${fmtH(h)}</small></div>
+        <div class="m6">${next.map(x => `<div class="hc l-${lvl(x.u)}" title="${x.m.long}: ${fmtH(x.h)} von ${fmtH(e.hours)}"><b>${x.u > 0 ? Math.round(x.u) : '–'}</b><small>${x.m.short}</small></div>`).join('')}</div>
+        <div class="st l-${overMonths.length ? 'over' : lvl(u)}">${overMonths.length
+          ? `<b>überlastet</b>${overMonths.map(x => x.m.short).join(', ')} · bis ${fmtP(Math.max(...overMonths.map(x => x.u)))}`
+          : `<b>${LVL[lvl(u)]}</b>frei ${freeFrom(e)}`}</div>
+        <button class="round sm" data-action="new-project" data-emp="${e.id}" title="Projekt zuweisen">${I.plus}</button>
+      </div>`).join('')}
+    </section>
+
+    <div class="bottom">
+      <section class="glass card cA">
+        <div class="card-h"><span class="ic">${I.users}</span><h3>Team-Auslastung</h3></div>
+        <div class="cA-body">
+          <div class="ring-wrap">${ring(t.util, `${Math.round(t.util)}<sup>%</sup>`, `${fmtH(t.load)} von ${fmtH(t.cap)}`, 196)}
+            <span class="ring-chip">${I.clock}${fmtH(t.free)} frei</span></div>
+          <div class="modes">${ms4.map((m, i) => `<button class="mode ${i === ui.homeOff ? 'on' : ''}" data-action="home-month" data-val="${i}" title="${m.long}"><i>${I.cal}</i>${m.short}</button>`).join('')}</div>
+        </div>
+      </section>
+      <section class="glass card cC">
+        <div class="card-h"><span class="ic">${I.chart}</span><h3>Team-Auslastung 12 Monate</h3>
+          <span class="right"><span class="pill ${overMonths ? 'lv l-over' : 'lv l-good'}"><span class="dot"></span>${overMonths ? `${overMonths} Monat${overMonths > 1 ? 'e' : ''} über 100 %` : 'Team nie über 100 %'}</span></span></div>
+        <div class="big-num"><b class="num">${Math.round(avg12)}</b><span>% Ø Team</span></div>
+        ${teamChart(ms12)}
+      </section>
+    </div>
+    </div>
+
+    <div class="side">
+      <!-- Hinweise -->
+      <section class="glass card alerts">
+        <div class="card-h"><span class="ic">${I.bell}</span><h3>Achtung</h3></div>
+        ${!overloaded.length && !hourIssues.length && !dueList.length ? `<div class="all-good">${I.check.replace('<svg', '<svg width="20" height="20"')}<span>Alles im grünen Bereich – niemand überlastet, keine Stundenüberschreitung.</span></div>` : ''}
+        ${overloaded.length ? `<div class="al-sec"><h4><span class="pill lv l-over">${overloaded.length}</span>Überlastete Mitarbeiter</h4>
+          ${overloaded.map(x => `<div class="tile al-row l-over" data-action="open-emp" data-id="${x.e.id}">${avatar(x.e, 'sm')}<div class="who"><b>${esc(x.e.name)}</b><small>${x.overMonths.map(o => `${o.m.short} ${fmtP(o.u)}`).join(' · ')}</small></div><span class="val">+${fmtH(Math.max(...x.overMonths.map(o => o.h - x.e.hours)))}</span></div>`).join('')}</div>` : ''}
+        ${hourIssues.length ? `<div class="al-sec"><h4><span class="pill lv l-full">${hourIssues.length}</span>Stunden Projektleiter</h4>
+          ${hourIssues.map(p => { const e = empById(p.employeeId), s = hoursState(p); return `<div class="tile al-row l-${HSL[s]}" data-action="edit-project" data-id="${p.id}">${avatar(e, 'sm')}<div class="who"><b>${esc(p.name)}</b><small>${e ? esc(e.name) + ' · ' : ''}${s === 'over' ? 'Budget überschritten' : `Fortschritt erst ${p.progress} %`}</small></div><span class="val">${fmtH(p.istStd)} / ${fmtH(p.hours)}</span></div>`; }).join('')}</div>` : ''}
+        ${dueList.length ? `<div class="al-sec"><h4><span class="pill lv l-over">${dueList.length}</span>Abzuschliessen</h4>
+          ${dueList.map(p => `<div class="tile al-row l-over" data-action="close-project" data-id="${p.id}">${avatar(empById(p.employeeId), 'sm')}<div class="who"><b>${esc(p.name)}</b><small>Ende ${fmtDate(p.end)} – DB eintragen</small></div><span class="val">${I.flag.replace('<svg', '<svg width="16" height="16"')}</span></div>`).join('')}</div>` : ''}
+      </section>
+
+    <section class="glass card cD">
+      <div class="card-h"><span class="ic">${I.compass}</span><h3>Wer hat Zeit?</h3></div>
+      <div class="q-dates">
+        <label>Baustart<input type="date" data-quick="start" value="${q.start}"></label>
+        <label>Fertig<input type="date" data-quick="end" value="${q.end}"></label>
+      </div>
+      ${arc(best ? best.peak : 0, `<b class="num">${q.hours}<small>h</small></b><span>${best ? `${esc(best.e.name)}<br>max. ${fmtP(best.peak)}` : '–'}</span>`)}
+      <div class="q-ctrl"><button class="round" data-action="quick-h" data-val="-10" aria-label="weniger Stunden">−</button><button class="round" data-action="quick-h" data-val="10" aria-label="mehr Stunden">+</button></div>
+      <div class="q-best">${best ? `Beste Wahl: <b>${esc(best.e.name)}</b> · ${VERDICT[best.verdict]}` : ''}</div>
+      <button class="btn btn-primary block" data-action="quick-plan">Alle vergleichen ${I.next}</button>
+    </section>
+    </div>
+  </div></div>`;
+}
+
+/* ---------- Ersteinrichtung (leeres Programm) ---------- */
+function renderSetup(){
+  const s = S(), n = state.employees.length;
+  return `<div>
+  <div class="greet"><div><p>${greeting()},</p><h1>Willkommen im ProjektCockpit</h1></div></div>
+  <div class="setup">
+    <section class="glass card step ${s.userName ? 'done' : ''}"><span class="step-no">${s.userName ? '✓' : '1'}</span><div>
+      <h3>Dein Name</h3><p>Erscheint in der Begrüssung.</p>
+      <div class="grid-2">${field('Name', `<input data-setup="userName" value="${esc(s.userName)}" placeholder="Vorname Nachname" maxlength="60">`)}
+        ${field('Projektnummern beginnen mit', `<input data-setup="numberPrefix" value="${esc(s.numberPrefix)}" maxlength="12">`)}</div>
+    </div></section>
+    <section class="glass card step ${n ? 'done' : ''}"><span class="step-no">${n ? '✓' : '2'}</span><div>
+      <h3>Team erfassen</h3><p>Pro Projektleiter: wie viele Arbeitsstunden stehen im Monat zur Verfügung?</p>
+      <div class="setup-add">
+        ${field('Name', `<input id="su-name" placeholder="z. B. Anna Keller" maxlength="60">`)}
+        ${field('Rolle', `<input id="su-role" placeholder="z. B. Projektleiterin" maxlength="60">`)}
+        ${field('Stunden / Monat', `<div class="affix"><input id="su-h" type="number" min="1" value="${s.defaultHours}"><span>h</span></div>`)}
+        <button class="btn btn-primary" data-action="setup-add">${I.plus} Hinzufügen</button>
+      </div>
+    </div></section>
+    <section class="glass card step"><span class="step-no">3</span><div>
+      <h3>Projekte erfassen</h3><p>Sobald das Team steht, siehst du hier die Auslastung. Danach Projekte mit Projektleiter-Stunden, Baustart und Fertigstellung erfassen.</p>
+    </div></section>
+    <p class="muted" style="text-align:center;font-size:13px">Nur ausprobieren? <button class="linkish" data-action="demo">Demo-Daten laden</button> · <button class="linkish" data-action="import">Sicherung importieren</button></p>
+  </div></div>`;
+}
+
+/* ---------- Kapazität (Matrix) ---------- */
+function renderCapacity(){
+  const ms = months(ui.capOff, 12);
+  const totals = ms.map(m => teamMonth(m.key));
+  return `<div>
+  <div class="page-h">
+    <div><p class="eyebrow">Kapazität</p><h1>Auslastung je Mitarbeiter und Monat</h1><p class="sub">Projektleiter-Stunden aller Projekte, verteilt auf die Arbeitstage zwischen Baustart und Fertigstellung – im Verhältnis zu den Monatsstunden. Klick auf ein Feld zeigt die Projekte.</p></div>
+    <div class="month-nav"><button class="round sm" data-action="cap-shift" data-val="-3" aria-label="früher">${I.back}</button><span>${ms[0].long} – ${ms[11].long}</span><button class="round sm" data-action="cap-shift" data-val="3" aria-label="später">${I.next}</button>
+      ${ui.capOff ? `<button class="btn btn-sm" data-action="cap-shift" data-val="0">Heute</button>` : ''}</div>
+  </div>
+  ${state.employees.length ? `<section class="glass card"><div class="matrix-scroll"><div class="matrix">
+    <div class="th l">Mitarbeiter</div>${ms.map(m => `<div class="th ${m.current ? 'cur' : ''}">${m.label}</div>`).join('')}<div class="th" style="text-align:right">frei ab</div>
+    ${state.employees.map(e => `<div class="m-name" data-action="open-emp" data-id="${e.id}">${avatar(e, 'sm')}<div style="min-width:0"><b>${esc(e.name)}</b><small>${fmtH(e.hours)} / Monat</small></div></div>
+      ${ms.map(m => { const h = load_(e, m.key), u = e.hours ? h / e.hours * 100 : 0; return `<button class="hc l-${lvl(u)}" data-action="cell" data-id="${e.id}" data-key="${m.key}" title="${m.long}: ${fmtH(h)} von ${fmtH(e.hours)}"><b>${u > 0 ? fmtP(u) : '–'}</b><small>${fmtH(h)}</small></button>`; }).join('')}
+      <div class="m-free">${freeFrom(e)}<small>dauerhaft unter ${S().fullLoad} %</small></div>`).join('')}
+    <div class="m-sep"></div>
+    <div class="m-name" style="cursor:default"><span class="av sm" style="--a:#3a4042;color:var(--text)">Σ</span><div><b>Gesamtes Team</b><small>${fmtH(state.employees.reduce((s, e) => s + e.hours, 0))} / Monat</small></div></div>
+    ${totals.map((t, i) => `<div class="hc l-${lvl(t.util)}" title="${ms[i].long}"><b>${fmtP(t.util)}</b><small>${fmtH(t.free)} frei</small></div>`).join('')}
+    <div></div>
+  </div></div>
+  <div class="legend">${['none','low','good','full','over'].map(k => `<span><i class="l-${k}"></i>${LVL[k]}${k === 'full' ? ` (≥ ${S().fullLoad} %)` : k === 'over' ? ' (> 100 %)' : k === 'good' ? ` (50–${S().fullLoad} %)` : ''}</span>`).join('')}</div>
+  </section>` : emptyTeam()}
+  </div>`;
+}
+function emptyTeam(){ return `<section class="glass card" style="text-align:center;padding:40px"><p class="muted">Noch kein Team erfasst.</p><button class="btn btn-primary" style="margin-top:14px" data-action="new-emp">${I.plus} Mitarbeiter anlegen</button></section>`; }
+
+/* ---------- Projekte ---------- */
+function filteredProjects(){
+  const q = ui.projSearch.trim().toLowerCase();
+  return state.projects.filter(p => (ui.projFilter === 'all' || projStatus(p) === ui.projFilter) && (ui.projEmp === 'all' || p.employeeId === ui.projEmp)
+    && (!q || `${p.number} ${p.name} ${(empById(p.employeeId) || {}).name || ''}`.toLowerCase().includes(q)))
+    // offene Projekte zuerst (nach Baustart), abgeschlossene danach (neueste zuerst)
+    .sort((a, b) => (a.closed - b.closed) || (a.closed ? (b.closedAt || '').localeCompare(a.closedAt || '') : (a.start || '').localeCompare(b.start || '')));
+}
+function renderProjects(){
+  const counts = { all: state.projects.length, run: 0, future: 0, due: 0, closed: 0 };
+  state.projects.forEach(p => counts[projStatus(p)]++);
+  const list = filteredProjects();
+  return `<div>
+  <div class="page-h">
+    <div><p class="eyebrow">Projekte</p><h1>Projekte &amp; Zeitplan</h1><p class="sub">Projektleiter-Stunden, Zeitraum und Fortschritt aller Projekte. Den Fortschritt stellst du direkt mit dem Regler ein – der orange Strich zeigt, wie viel Zeit bereits verstrichen ist.</p></div>
+    <div class="right"><button class="btn btn-primary" data-action="new-project">${I.plus} Neues Projekt</button></div>
+  </div>
+  <section class="glass toolbar" style="border-radius:22px">
+    <div class="seg">${[['timeline','Zeitstrahl'],['list','Liste']].map(([k, l]) => `<button class="${ui.projMode === k ? 'on' : ''}" data-action="proj-mode" data-val="${k}">${l}</button>`).join('')}</div>
+    <input class="input grow" type="search" placeholder="Projekt oder Nummer suchen …" value="${esc(ui.projSearch)}" data-input="proj-search">
+    <div class="seg">${[['all','Alle'],['run','Laufend'],['future','Geplant'],['due','Abschliessen'],['closed','Abgeschlossen']].map(([k, l]) => `<button class="${ui.projFilter === k ? 'on' : ''}" data-action="proj-filter" data-val="${k}">${l} <span class="muted">${counts[k]}</span></button>`).join('')}</div>
+    <select class="input" data-change="proj-emp"><option value="all">Alle Projektleiter</option>${state.employees.map(e => `<option value="${e.id}" ${ui.projEmp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+  </section>
+  <div id="proj-list">${projectListHTML(list)}</div></div>`;
+}
+/* Tabellenzeile eines Projekts (Liste, Mitarbeiter-Detail) */
+function projRow(p, withPL){
+  const e = empById(p.employeeId), s = projStatus(p);
+  return `<tr data-action="edit-project" data-id="${p.id}" data-flash="${p.id}">
+    <td class="muted">${esc(p.number)}</td><td>${esc(p.name)}</td>
+    ${withPL ? `<td><span style="display:inline-flex;gap:8px;align-items:center">${avatar(e, 'sm')}${e ? esc(e.name) : '–'}</span></td>` : ''}
+    <td>${hrsCell(p, !p.closed)}</td><td>${fmtDate(p.start)}</td><td>${fmtDate(p.end)}</td>
+    <td>${progSlider(p)}</td>
+    <td><span class="pill lv l-${PSTAT_LV[s]}"><span class="dot"></span>${PSTAT[s]}</span></td>
+    <td class="r num">${p.closed ? `<span class="pill lv l-${dbLvl(p.finalDB)}">${fmtDB(p.finalDB)}</span>` : '<span class="muted">–</span>'}</td>
+    <td class="r" style="white-space:nowrap">${!p.closed && s !== 'future' ? `<button class="btn btn-sm ${s === 'due' ? 'btn-primary' : ''}" data-action="close-project" data-id="${p.id}">${I.flag} Abschliessen</button>` : ''}
+      ${withPL ? `<button class="round sm danger" data-action="del-project" data-id="${p.id}" title="Löschen">${I.trash}</button>` : ''}</td></tr>`;
+}
+function projectListHTML(list){
+  if(!list.length) return `<section class="glass card" style="text-align:center;padding:40px"><p class="muted">Keine Projekte gefunden.</p><button class="btn btn-primary" style="margin-top:14px" data-action="new-project">${I.plus} Projekt erfassen</button></section>`;
+  if(ui.projMode === 'list'){
+    return `<section class="glass card"><div class="tbl-wrap"><table class="tbl" style="min-width:1180px"><thead><tr><th>Nr.</th><th>Projekt</th><th>Projektleiter</th><th>PL-Std. Ist / Budget</th><th>Baustart</th><th>Fertig</th><th style="min-width:200px">Fortschritt</th><th>Status</th><th class="r">DB</th><th></th></tr></thead><tbody>
+      ${list.map(p => projRow(p, true)).join('')}
+    </tbody></table></div></section>`;
+  }
+  // Zeitstrahl
+  const t = today0();
+  const st = list.map(p => +parseD(p.start || todayISO())), en = list.map(p => +parseD(p.end || todayISO()));
+  let a = new Date(Math.min(...st, +t)); a = new Date(a.getFullYear(), a.getMonth(), 1);
+  const bd = new Date(Math.max(...en, +t)); let b = new Date(bd.getFullYear(), bd.getMonth() + 1, 1);
+  if((b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() > 30){ a = new Date(t.getFullYear(), t.getMonth() - 6, 1); b = new Date(a.getFullYear(), a.getMonth() + 30, 1); }
+  const span = b - a, pos = d => (d - a) / span * 100;
+  const ms = []; for(let d = new Date(a); d < b; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) ms.push(new Date(d));
+  const step = ms.length > 20 ? 3 : ms.length > 12 ? 2 : 1;
+  const groups = state.employees.map(e => ({ e, ps: list.filter(p => p.employeeId === e.id) })).filter(g => g.ps.length);
+  const un = list.filter(p => !empById(p.employeeId)); if(un.length) groups.push({ e: null, ps: un });
+  let i = 0;
+  return `<section class="glass card"><div class="gantt-scroll"><div class="gantt">
+    <div class="g-head"><div class="g-label"><span class="eyebrow">Projektleiter / Projekt</span></div><div class="g-track g-months">${ms.map((m, k) => k % step ? '' : `<span style="left:${pos(m)}%;width:${pos(new Date(m.getFullYear(), m.getMonth() + step, 1)) - pos(m)}%">${MONTHS[m.getMonth()]}${m.getMonth() < step || k === 0 ? ' ' + String(m.getFullYear()).slice(2) : ''}</span>`).join('')}</div></div>
+    <div class="g-body">
+      <div class="g-grid">${ms.map(m => `<i style="left:${pos(m)}%"></i>`).join('')}<b class="g-today" style="left:${pos(t)}%"><em>Heute</em></b></div>
+      ${groups.map(g => `<div class="g-group"><div class="g-label">${avatar(g.e, 'sm')}<b>${g.e ? esc(g.e.name) : 'Nicht zugewiesen'}</b></div>
+        <div class="g-gmeta">${g.e ? `${months(0, 1)[0].short}: ${fmtP(util(g.e, curKey()))} · frei ${freeFrom(g.e)}` : ''}</div></div>
+        ${g.ps.map(p => { const ps = parseD(p.start || todayISO()), pe = new Date(parseD(p.end || todayISO()).getTime() + DAY); const l = clamp(pos(ps)), w = Math.max(clamp(pos(pe)) - l, .8), s = projStatus(p);
+          return `<div class="g-row"><div class="g-label" title="${esc(p.name)}"><span class="g-num">${esc(p.number)}</span><span class="g-name">${esc(p.name)}</span></div>
+            <div class="g-track"><button class="g-bar ${s}" style="left:${l}%;width:${w}%;animation-delay:${Math.min(i++, 16) * 35}ms" data-action="edit-project" data-id="${p.id}" data-flash="${p.id}"
+              title="${esc(p.name)} · ${fmtH(p.hours)} · ${fmtDate(p.start)} – ${fmtDate(p.end)} · Fortschritt ${p.progress} %${p.closed ? ' · DB ' + fmtDB(p.finalDB) : ''}"><span class="g-fill" style="width:${p.progress}%"></span><span>${p.closed ? `✓ DB ${fmtDB(p.finalDB)}` : `${p.progress} % · ${fmtH(p.hours)}`}</span></button></div></div>`; }).join('')}`).join('')}
+    </div></div></div>
+    <div class="legend"><span><i class="l-good"></i>laufend (Füllung = Fortschritt)</span><span><i class="l-full"></i>geplant</span><span><i class="l-over"></i>Enddatum vorbei – abschliessen</span><span><i class="l-none"></i>abgeschlossen</span></div>
+  </section>`;
+}
+
+/* ---------- Abschlüsse & DB ---------- */
+function renderResults(){
+  const allClosed = closedOf(state.projects);
+  const years = [...new Set(allClosed.map(p => (p.closedAt || p.end || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  if(ui.resYear !== 'all' && !years.includes(ui.resYear)) ui.resYear = 'all';
+  const inYear = p => ui.resYear === 'all' || (p.closedAt || p.end || '').startsWith(ui.resYear);
+  const closed = allClosed.filter(inYear).sort((a, b) => (b.closedAt || '').localeCompare(a.closedAt || ''));
+  const avg = avgDB(closed);
+  const wsum = closed.reduce((s, p) => s + p.hours, 0), wavg = wsum ? closed.reduce((s, p) => s + p.finalDB * p.hours, 0) / wsum : null;
+  const best = closed.slice().sort((a, b) => b.finalDB - a.finalDB)[0], worst = closed.slice().sort((a, b) => a.finalDB - b.finalDB)[0];
+  const due = state.projects.filter(p => projStatus(p) === 'due');
+  // Skala für die Punktdiagramme
+  const lo = Math.min(-5, ...closed.map(p => p.finalDB)), hi = Math.max(40, ...closed.map(p => p.finalDB));
+  const X = v => (v - lo) / (hi - lo) * 100;
+  const zones = `<span class="zone" style="left:0;width:${X(S().dbBad)}%;background:rgba(232,137,123,.08)"></span><span class="zone" style="left:${X(S().dbBad)}%;width:${X(S().dbGood) - X(S().dbBad)}%;background:rgba(235,190,120,.07)"></span><span class="zone" style="left:${X(S().dbGood)}%;right:0;background:rgba(168,209,154,.07)"></span>`;
+  const rows = state.employees.map(e => { const ps = closed.filter(p => p.employeeId === e.id); return { e, ps, a: avgDB(ps) }; })
+    .filter(r => r.ps.length).sort((a, b) => b.a - a.a);
+
+  return `<div>
+  <div class="page-h">
+    <div><p class="eyebrow">Abschlüsse</p><h1>Abgeschlossene Projekte &amp; DB</h1><p class="sub">Mit welchem Deckungsbeitrag haben deine Projektleiter ihre Projekte abgeschlossen? Ø DB gesamt und pro Mitarbeiter.</p></div>
+    <div class="seg">${[['all', 'Alle Jahre'], ...years.map(y => [y, y])].map(([k, l]) => `<button class="${ui.resYear === k ? 'on' : ''}" data-action="res-year" data-val="${k}">${l}</button>`).join('')}</div>
+  </div>
+
+  <div class="results">
+    <section class="glass card" style="display:flex;flex-direction:column;align-items:center">
+      <div class="card-h" style="align-self:stretch"><span class="ic">${I.trophy}</span><h3>Ø DB ${ui.resYear === 'all' ? 'gesamt' : ui.resYear}</h3></div>
+      ${arc(avg == null ? 0 : clamp(avg / Math.max(S().dbGood * 1.75, 1) * 100), `<b class="num">${avg == null ? '–' : avg.toLocaleString('de-CH', { maximumFractionDigits: 1 })}<small>%</small></b><span>${closed.length} abgeschlossene Projekte</span>`, 230, dbLvl(avg))}
+      <span class="pill lv l-${dbLvl(avg)}" style="margin-top:6px"><span class="dot"></span>${DBL[dbLvl(avg)]} · Ziel ≥ ${S().dbGood} %</span>
+      <p class="hint" style="text-align:center">gewichtet nach PL-Stunden: <b style="color:var(--text)">${fmtDB(wavg)}</b></p>
+    </section>
+
+    <section class="glass card">
+      <div class="card-h"><span class="ic">${I.users}</span><h3>Ø DB pro Mitarbeiter</h3><span class="right"><small>jeder Punkt = ein Projekt</small></span></div>
+      ${rows.length ? rows.map(({ e, ps, a }) => `<div class="tile rank-row l-${dbLvl(a)}" data-action="open-emp" data-id="${e.id}">
+          ${avatar(e)}<div><b>${esc(e.name)}</b><small>${ps.length} Projekt${ps.length > 1 ? 'e' : ''} · ${fmtDB(Math.min(...ps.map(p => p.finalDB)))} bis ${fmtDB(Math.max(...ps.map(p => p.finalDB)))}</small>
+            ${(() => { const hp = ps.filter(p => p.istStd > 0 && p.hours > 0); if(!hp.length) return ''; const dv = hp.reduce((s, p) => s + (p.istStd - p.hours) / p.hours * 100, 0) / hp.length; return `<small style="color:${dv > 0 ? 'var(--red)' : 'var(--sage)'}">Stunden Ø ${dv > 0 ? '+' : ''}${Math.round(dv)} % zum Budget</small>`; })()}</div>
+          <div class="dots-wrap"><div class="dots">${zones}${ps.map(p => `<i class="d l-${dbLvl(p.finalDB)}" style="left:${X(p.finalDB)}%" title="${esc(p.number)} ${esc(p.name)}: ${fmtDB(p.finalDB)}"></i>`).join('')}<i class="am" style="left:${X(a)}%" title="Ø ${fmtDB(a)}"></i></div></div>
+          <div class="avg num">${fmtDB(a)}</div>
+        </div>`).join('') + `<div class="scale-l" style="padding:0 14px"><span>${Math.round(lo)} %</span><span>rot &lt; ${S().dbBad} % · orange &lt; ${S().dbGood} % · grün ≥ ${S().dbGood} %</span><span>${Math.round(hi)} %</span></div>`
+        : '<p class="muted">Noch keine abgeschlossenen Projekte in diesem Zeitraum.</p>'}
+    </section>
+
+    <div class="stat-list">
+      <div class="glass stat"><span>Abgeschlossen</span><b class="num">${closed.length}</b><small>${fmtH(wsum)} PL-Stunden</small></div>
+      <div class="glass stat l-good"><span>Bestes Projekt</span><b class="num" style="color:var(--c)">${best ? fmtDB(best.finalDB) : '–'}</b><small>${best ? `${esc(best.name)} · ${esc((empById(best.employeeId) || {}).name || '–')}` : ''}</small></div>
+      <div class="glass stat l-over"><span>Schwächstes Projekt</span><b class="num" style="color:var(--c)">${worst ? fmtDB(worst.finalDB) : '–'}</b><small>${worst ? `${esc(worst.name)} · ${esc((empById(worst.employeeId) || {}).name || '–')}` : ''}</small></div>
+      <section class="glass card" style="padding:16px">
+        <div class="card-h" style="margin-bottom:10px"><span class="ic">${I.flag}</span><h3>Abzuschliessen</h3><span class="right"><span class="pill ${due.length ? 'lv l-over' : ''}">${due.length}</span></span></div>
+        ${due.length ? due.map(p => `<div class="tile due-row">${avatar(empById(p.employeeId), 'sm')}<div class="who"><b>${esc(p.name)}</b><small>Ende ${fmtDate(p.end)} · ${p.progress} %</small></div><button class="btn btn-sm btn-primary" data-action="close-project" data-id="${p.id}">Abschliessen</button></div>`).join('')
+          : '<p class="muted" style="font-size:13px">Alle Projekte mit vergangenem Enddatum sind abgeschlossen.</p>'}
+      </section>
+    </div>
+  </div>
+
+  <section class="glass card" style="margin-top:18px">
+    <div class="card-h"><span class="ic">${I.folder}</span><h3>Abgeschlossene Projekte</h3><span class="right"><small>${closed.length}</small></span></div>
+    ${closed.length ? `<div class="tbl-wrap"><table class="tbl" style="min-width:980px"><thead><tr><th>Nr.</th><th>Projekt</th><th>Projektleiter</th><th>PL-Std. Ist / Budget</th><th>Zeitraum</th><th>Abgeschlossen</th><th class="r">DB</th><th>Notiz</th></tr></thead><tbody>
+      ${closed.map(p => { const e = empById(p.employeeId); return `<tr data-action="edit-project" data-id="${p.id}" data-flash="${p.id}"><td class="muted">${esc(p.number)}</td><td>${esc(p.name)}</td>
+        <td><span style="display:inline-flex;gap:8px;align-items:center">${avatar(e, 'sm')}${e ? esc(e.name) : '–'}</span></td><td>${hrsCell(p, false)}</td>
+        <td>${fmtDate(p.start)} – ${fmtDate(p.end)}</td><td>${fmtDate(p.closedAt)}</td><td class="r"><span class="pill lv l-${dbLvl(p.finalDB)}">${fmtDB(p.finalDB)}</span></td>
+        <td class="muted" style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.closeNote)}">${esc(p.closeNote) || '–'}</td></tr>`; }).join('')}
+    </tbody></table></div>` : '<p class="muted">Noch keine Projekte abgeschlossen. Schliesse ein Projekt über „Abschliessen“ in der Projektliste ab.</p>'}
+  </section></div>`;
+}
+
+/* ---------- Planer: Wer macht was? ---------- */
+function renderPlanner(){
+  if(!ui.plan){ const t0 = today0(); ui.plan = { name: '', number: nextNumber(), hours: 160, start: iso(new Date(t0.getFullYear(), t0.getMonth() + 1, 1)), end: iso(new Date(t0.getFullYear(), t0.getMonth() + 6, 0)) }; }
+  const p = ui.plan;
+  return `<div>
+  <div class="page-h"><div><p class="eyebrow">Planer</p><h1>Wer macht was?</h1><p class="sub">Neues Projekt eingeben – das Cockpit rechnet für jeden Projektleiter aus, wie ausgelastet er im Projektzeitraum wäre, und schlägt die beste Besetzung vor.</p></div></div>
+  ${state.employees.length ? `<div class="planner">
+    <section class="glass card">
+      <div class="card-h"><span class="ic">${I.folder}</span><h3>Neues Projekt</h3></div>
+      <div class="form" id="plan-form">
+        <div class="grid-2">${field('Projektnummer', `<input data-plan="number" value="${esc(p.number)}">`)}${field('Projektname', `<input data-plan="name" value="${esc(p.name)}" placeholder="z. B. Neubau MFH">`)}</div>
+        ${field('Aufwand Projektleiter', `<div class="stepper"><button class="round" data-action="plan-h" data-val="-20">−</button><div class="affix" style="flex:1"><input data-plan="hours" type="number" min="1" value="${p.hours}"><span>Std.</span></div><button class="round" data-action="plan-h" data-val="20">+</button></div>`)}
+        <div class="grid-2">${field('Baustart', `<input type="date" data-plan="start" value="${p.start}">`)}${field('Fertigstellung', `<input type="date" data-plan="end" value="${p.end}">`)}</div>
+      </div>
+      <div id="plan-sum"></div>
+    </section>
+    <section class="glass card"><div class="card-h"><span class="ic">${I.compass}</span><h3>Vorschlag</h3><span class="right"><small>sortiert nach höchster Auslastung im Zeitraum</small></span></div><div id="plan-res"></div></section>
+  </div>` : emptyTeam()}
+  </div>`;
+}
+function plannerResults(){
+  const box = document.getElementById('plan-res'), sum = document.getElementById('plan-sum');
+  if(!box) return;
+  const p = ui.plan, valid = p.hours > 0 && p.start && p.end && p.end >= p.start;
+  if(!valid){ box.innerHTML = '<p class="muted">Bitte Stunden, Baustart und Fertigstellung angeben (Fertig nach Baustart).</p>'; sum.innerHTML = ''; return; }
+  const wm = workMonths({ ...p }), cands = rankCandidates({ ...p, id: '__plan' });
+  sum.innerHTML = `<div class="plan-sum"><div><span>Laufzeit</span><b class="num">${wm} Monat${wm > 1 ? 'e' : ''}</b></div><div><span>Ø pro Monat</span><b class="num">${fmtH(p.hours / wm)}</b></div></div>`;
+  box.innerHTML = cands.map((c, i) => `<div class="tile cand ${i === 0 && c.verdict !== 'over' ? 'best' : ''} l-${c.verdict}">
+    <span class="rank">${i + 1}</span>${avatar(c.e)}
+    <div class="who"><b>${esc(c.e.name)}</b><small>${esc(c.e.role || '—')} · ${fmtH(c.e.hours)}/Monat</small>
+      <div class="meta"><span>Spitze <b>${fmtP(c.peak)}</b> (heute ${fmtP(c.basePeak)})</span><span>frei im Zeitraum <b>${fmtH(c.free)}</b> für ${fmtH(p.hours)}</span></div></div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end"><span class="pill lv l-${c.verdict}"><span class="dot"></span>${VERDICT[c.verdict]}</span>
+      <button class="btn btn-sm ${i === 0 ? 'btn-primary' : ''}" data-action="plan-assign" data-id="${c.e.id}">Zuweisen</button></div>
+    <div class="strip" style="--n:${c.rows.length}">${c.rows.map(r => { const [y, m] = r.key.split('-'); return `<div class="hc l-${lvl(r.with)} ${r.with - r.base > .5 ? 'with' : ''}" title="${MONTHS_L[+m - 1]} ${y}: vorher ${fmtP(r.base)}, mit Projekt ${fmtP(r.with)}"><b>${fmtP(r.with)}</b><small>${MONTHS[+m - 1]} ${y.slice(2)}</small></div>`; }).join('')}</div>
+  </div>`).join('');
+}
+
+/* ---------- Team ---------- */
+function renderTeam(){
+  const ms = months(0, 6);
+  return `<div>
+  <div class="page-h"><div><p class="eyebrow">Team</p><h1>Mitarbeiter</h1><p class="sub">Monatliche Arbeitsstunden je Projektleiter und Auslastung der nächsten 6 Monate.</p></div>
+    <div class="right"><button class="btn btn-primary" data-action="new-emp">${I.plus} Mitarbeiter</button></div></div>
+  ${state.employees.length ? `<div class="team-grid">${state.employees.map(e => { const ps = empProjects(e), run = ps.filter(p => !p.closed).length, a = avgDB(ps), nc = closedOf(ps).length; return `<section class="glass tcard" data-action="open-emp" data-id="${e.id}" data-flash="${e.id}">
+    <div class="tcard-h">${avatar(e)}<div><b>${esc(e.name)}</b><small>${esc(e.role || '—')} · ${run} offene Projekte</small></div>
+      <span class="right"><button class="round sm" data-action="edit-emp" data-id="${e.id}" title="Bearbeiten">${I.edit}</button><button class="round sm danger" data-action="del-emp" data-id="${e.id}" title="Löschen">${I.trash}</button></span></div>
+    <div class="kv"><div><span>Stunden / Monat</span><b class="num">${fmtH(e.hours)}</b></div><div><span>Aktuell</span><b class="num">${fmtP(util(e, curKey()))}</b></div><div class="l-${dbLvl(a)}"><span>Ø DB (${nc} abgeschl.)</span><b class="num" style="color:${a == null ? 'inherit' : 'var(--c)'}">${fmtDB(a)}</b></div></div>
+    <div class="strip12">${ms.map(m => heat(util(e, m.key), load_(e, m.key), m.label)).join('')}</div>
+  </section>`; }).join('')}</div>` : emptyTeam()}
+  </div>`;
+}
+
+/* ---------- Mitarbeiter-Detail ---------- */
+function renderEmployee(){
+  const e = empById(ui.empId), cur = months(0, 1)[0], u = util(e, cur.key), ms = months(0, 12);
+  const ps = empProjects(e).sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  return `<div>
+  <button class="back" data-action="nav" data-view="team">${I.back} Zurück zum Team</button>
+  <section class="glass card emp-hero">${avatar(e, 'lg')}
+    <div><h1>${esc(e.name)}</h1><p>${esc(e.role || '—')} · ${fmtH(e.hours)} pro Monat · frei ${freeFrom(e)}</p>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill lv l-${dbLvl(avgDB(ps))}"><span class="dot"></span>Ø DB ${fmtDB(avgDB(ps))} aus ${closedOf(ps).length} abgeschlossenen Projekten</span></div></div>
+    <div class="right" style="display:flex;gap:10px"><button class="btn" data-action="edit-emp" data-id="${e.id}">${I.edit} Bearbeiten</button><button class="btn btn-primary" data-action="new-project" data-emp="${e.id}">${I.plus} Projekt zuweisen</button></div>
+  </section>
+  <div class="detail">
+    <section class="glass card" style="display:flex;flex-direction:column;align-items:center">
+      <div class="card-h" style="align-self:stretch"><span class="ic">${I.clock}</span><h3>${cur.long}</h3></div>
+      ${ring(u, `${Math.round(u)}<sup>%</sup>`, `${fmtH(load_(e, cur.key))} von ${fmtH(e.hours)}`, 220)}
+      <span class="pill lv l-${lvl(u)}" style="margin-top:14px"><span class="dot"></span>${LVL[lvl(u)]}</span>
+    </section>
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <section class="glass card"><div class="card-h"><span class="ic">${I.grid}</span><h3>Nächste 12 Monate</h3></div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${ms.map(m => `<button class="hc l-${lvl(util(e, m.key))}" data-action="cell" data-id="${e.id}" data-key="${m.key}"><b>${fmtP(util(e, m.key))}</b><small>${m.label} · ${fmtH(load_(e, m.key))}</small></button>`).join('')}</div>
+      </section>
+      <section class="glass card"><div class="card-h"><span class="ic">${I.folder}</span><h3>Projekte</h3><span class="right"><small>${ps.length}</small></span></div>
+        ${ps.length ? `<div class="tbl-wrap"><table class="tbl" style="min-width:1040px"><thead><tr><th>Nr.</th><th>Projekt</th><th>PL-Std. Ist / Budget</th><th>Baustart</th><th>Fertig</th><th style="min-width:190px">Fortschritt</th><th>Status</th><th class="r">DB</th><th></th></tr></thead><tbody>
+          ${ps.map(p => projRow(p, false)).join('')}
+        </tbody></table></div>` : '<p class="muted">Noch keine Projekte zugewiesen.</p>'}
+      </section>
+    </div>
+  </div></div>`;
+}
+
+/* =========================================================
+   Modals
+   ========================================================= */
+let curOverlay = null, lastPt = null;
+const field = (label, input, hint = '') => `<div class="field"><label>${label}</label>${input}${hint ? `<small>${hint}</small>` : ''}</div>`;
+function openModal({ title, sub = '', body, foot, size = '' }){
+  closeModal(true);
+  const root = document.getElementById('modal-root');
+  root.insertAdjacentHTML('beforeend', `<div class="overlay"><div class="modal ${size}" role="dialog" aria-modal="true">
+    <div class="modal-h"><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div><button class="round sm" data-close aria-label="Schliessen">${I.x}</button></div>
+    <div class="modal-b">${body}</div><div class="modal-f">${foot}</div></div></div>`);
+  const ov = root.lastElementChild, m = ov.querySelector('.modal');
+  curOverlay = ov;
+  requestAnimationFrame(() => ov.classList.add('show'));
+  if(!REDUCED){
+    const r = m.getBoundingClientRect();
+    if(lastPt) m.style.transformOrigin = `${lastPt.x - r.left}px ${lastPt.y - r.top}px`;
+    m.animate([{ transform: 'scale(.85)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.2,1.2,.4,1)' });
+  }
+  ov.addEventListener('mousedown', ev => { if(ev.target === ov) closeModal(); });
+  ov.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal()));
+  const f = ov.querySelector('.modal-b input:not([type=checkbox]), .modal-b select');
+  if(f) setTimeout(() => f.focus({ preventScroll: true }), 80);
+  return ov;
+}
+function closeModal(instant){
+  const ov = curOverlay; curOverlay = null;
+  if(!ov) return;
+  if(instant || REDUCED){ ov.remove(); return; }
+  ov.classList.add('leaving'); ov.classList.remove('show');
+  ov.querySelector('.modal').animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(.92) translateY(10px)', opacity: 0 }], { duration: 200, easing: 'ease-in', fill: 'forwards' }).onfinish = () => ov.remove();
+}
+function showErrors(box, errs){ box.hidden = !errs.length; box.innerHTML = errs.length ? `Bitte prüfen:<ul>${errs.map(e => `<li>${e}</li>`).join('')}</ul>` : ''; }
+
+/* ---------- Mitarbeiter ---------- */
+function empModal(id){
+  const e = id ? empById(id) : null;
+  const ov = openModal({
+    title: e ? 'Mitarbeiter bearbeiten' : 'Neuer Mitarbeiter', sub: 'Name, Rolle und verfügbare Arbeitsstunden pro Monat',
+    body: `<form class="form" id="eform" novalidate><div class="errors" hidden></div>
+      <div class="grid-2">${field('Name *', `<input name="name" value="${esc(e ? e.name : '')}" maxlength="60" placeholder="z. B. Anna Keller">`)}${field('Rolle', `<input name="role" value="${esc(e ? e.role : '')}" maxlength="60" placeholder="z. B. Projektleiterin">`)}</div>
+      ${field('Arbeitsstunden pro Monat *', `<div class="affix"><input name="hours" type="number" min="1" step="1" value="${e ? e.hours : S().defaultHours}"><span>h / Monat</span></div>`, 'Stunden, die monatlich für Projekte zur Verfügung stehen – z. B. 160 h bei 100 %, 128 h bei 80 %.')}
+      ${field('Farbe', `<div style="display:flex;gap:8px">${COLORS.map(c => `<label style="cursor:pointer"><input type="radio" name="color" value="${c}" ${(e ? e.color : COLORS[state.employees.length % COLORS.length]) === c ? 'checked' : ''} style="display:none"><span class="av sm color-pick" style="--a:${c}"></span></label>`).join('')}</div>`)}
+    </form>`,
+    foot: `${e ? `<button class="btn btn-danger spacer" id="e-del">${I.trash} Löschen</button>` : ''}<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" type="submit" form="eform">${I.check} Speichern</button>`
+  });
+  const f = ov.querySelector('#eform');
+  const paint = () => f.querySelectorAll('.color-pick').forEach(s => { const r = s.previousElementSibling; s.style.boxShadow = r.checked ? '0 0 0 3px #1d2122, 0 0 0 5px ' + r.value : 'none'; });
+  f.addEventListener('change', paint); paint();
+  if(e) ov.querySelector('#e-del').addEventListener('click', () => confirmDel('emp', e.id));
+  f.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const name = f.name.value.trim(), hours = num(f.hours.value), errs = [];
+    f.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid'));
+    if(!name){ errs.push('Name fehlt.'); f.name.classList.add('invalid'); }
+    if(hours <= 0){ errs.push('Arbeitsstunden müssen grösser als 0 sein.'); f.hours.classList.add('invalid'); }
+    showErrors(f.querySelector('.errors'), errs); if(errs.length) return;
+    const data = { name, role: f.role.value.trim(), hours, color: (f.querySelector('[name=color]:checked') || {}).value || COLORS[0] };
+    if(e){ Object.assign(e, data); ui.flash = e.id; toast('Mitarbeiter gespeichert'); }
+    else { const ne = { id: uid(), ...data }; state.employees.push(ne); ui.flash = ne.id; toast(`${name} angelegt`); }
+    save(); closeModal(); render();
+  });
+}
+
+/* ---------- Projekt ---------- */
+function projectModal(id, presetEmp, preset){
+  const ex = id ? projById(id) : null, t0 = today0();
+  const p = ex ? { ...ex } : { number: nextNumber(), name: '', employeeId: presetEmp || '', hours: 120,
+    start: iso(new Date(t0.getFullYear(), t0.getMonth() + 1, 1)), end: iso(new Date(t0.getFullYear(), t0.getMonth() + 4, 0)), note: '', progress: 0, ...(preset || {}) };
+  const ov = openModal({
+    size: 'lg', title: ex ? 'Projekt bearbeiten' : 'Neues Projekt', sub: ex ? `${esc(ex.number)} · ${esc(ex.name)}` : 'Projektleiter-Aufwand und Zeitraum',
+    body: `<form class="form" id="pform" novalidate><div class="errors" hidden></div>
+      ${ex && ex.closed ? `<div class="closed-box l-${dbLvl(ex.finalDB)}">${I.trophy.replace('<svg', '<svg width="22" height="22"')}<b>DB ${fmtDB(ex.finalDB)}</b><span>abgeschlossen am ${fmtDate(ex.closedAt)}${ex.closeNote ? ' · ' + esc(ex.closeNote) : ''}</span></div>` : ''}
+      <div class="form-sec"><h4>Projekt</h4><div class="grid-2">
+        ${field('Projektnummer', `<input name="number" value="${esc(p.number)}" maxlength="30">`)}
+        ${field('Projektname *', `<input name="name" value="${esc(p.name)}" maxlength="90" placeholder="z. B. Neubau MFH Lindenhof">`)}
+      </div></div>
+      <div class="form-sec"><h4>1 · Aufwand &amp; Zeitraum</h4><div class="grid-3">
+        ${field('Aufwand Projektleiter *', `<div class="affix"><input name="hours" type="number" min="1" step="1" value="${p.hours || ''}"><span>Std.</span></div>`, 'Stunden, die der PL am Projekt arbeiten darf')}
+        ${field('Baustart *', `<input name="start" type="date" value="${esc(p.start)}">`)}
+        ${field('Fertigstellung *', `<input name="end" type="date" value="${esc(p.end)}">`)}
+      </div><p class="hint" id="p-dist"></p></div>
+      <div class="form-sec"><h4>2 · Projektleiter wählen <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">– vorgeschlagen werden nur Projektleiter mit Zeit</span></h4>
+        <div id="p-pick"></div></div>
+      <div class="form-sec"><h4>Stand</h4>
+        <div class="grid-2">
+          ${field('Fortschritt', `<div class="prog big"><span class="track"><input type="range" name="progress" min="0" max="100" step="5" value="${p.progress || 0}" style="--v:${p.progress || 0}%" ${ex && ex.closed ? 'disabled' : ''}><i class="tmark" id="p-tmark" hidden></i></span><b id="p-progl">${p.progress || 0} %</b></div>`)}
+          ${field('Aufgewendete Stunden Projektleiter', `<div class="affix"><input name="istStd" type="number" min="0" step="1" value="${p.istStd || ''}" placeholder="0"><span>Std.</span></div>`)}
+        </div>
+        <p class="hint" id="p-proghint"></p><div id="p-hrs"></div></div>
+      <div class="form-sec"><h4>Auswirkung auf die Auslastung</h4><div id="p-impact"></div></div>
+      ${field('Notiz', `<textarea name="note" maxlength="500" placeholder="optional">${esc(p.note)}</textarea>`)}
+    </form>`,
+    foot: `${ex ? `<button class="btn btn-danger spacer" id="p-del">${I.trash} Löschen</button>` : ''}
+      ${ex && !ex.closed ? `<button class="btn" id="p-close">${I.flag} Abschliessen</button>` : ''}
+      ${ex && ex.closed ? `<button class="btn" id="p-reopen">Wiedereröffnen</button><button class="btn" id="p-close">${I.edit} Abschluss bearbeiten</button>` : ''}
+      <button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" type="submit" form="pform">${I.check} ${ex ? 'Speichern' : 'Projekt anlegen'}</button>`
+  });
+  const f = ov.querySelector('#pform');
+  if(ex) ov.querySelector('#p-del').addEventListener('click', () => confirmDel('project', ex.id));
+  const bc = ov.querySelector('#p-close'), br = ov.querySelector('#p-reopen');
+  if(bc) bc.addEventListener('click', () => { Object.assign(ex, { progress: num(f.progress.value), istStd: Math.max(0, num(f.istStd.value)) }); save(); closeProjectModal(ex.id); });
+  if(br) br.addEventListener('click', () => { ex.closed = false; ex.closedAt = ''; ui.flash = ex.id; save(); closeModal(); render(); toast('Projekt wiedereröffnet – DB bleibt gespeichert, bis du erneut abschliesst'); });
+  const selEmp = () => (f.querySelector('input[name="employeeId"]:checked') || {}).value || '';
+  const read = () => ({ number: f.number.value.trim(), name: f.name.value.trim(), employeeId: selEmp(), hours: num(f.hours.value), start: f.start.value, end: f.end.value, note: f.note.value.trim(),
+    progress: Math.round(clamp(num(f.progress.value))), istStd: Math.max(0, num(f.istStd.value)) });
+  /* Projektleiter-Auswahl: mit Zeit oben, ohne Zeit unten mit Vermerk.
+     Beim Bearbeiten ist der bisherige PL fixiert – wechseln nur bewusst über "Projektleiter wechseln". */
+  const origEmp = ex && empById(ex.employeeId) ? ex.employeeId : '';
+  let changePL = !origEmp;
+  let lastKey = '';
+  const renderPick = (force) => {
+    const d = read(), key = `${d.hours}|${d.start}|${d.end}|${changePL}`;
+    if(!force && key === lastKey) return;
+    lastKey = key;
+    const cur = d.employeeId || p.employeeId || '';
+    const valid = d.hours > 0 && d.start && d.end && d.end >= d.start;
+    if(!changePL){
+      const e = empById(cur), c = valid ? rankCandidates({ ...d, id: '__d' }, ex.id).find(x => x.e.id === e.id) : null;
+      ov.querySelector('#p-pick').innerHTML = `<div class="pl-locked tile l-${c ? c.verdict : 'none'}">
+        <input type="radio" name="employeeId" value="${e.id}" checked hidden>${avatar(e)}
+        <div class="who"><b>${esc(e.name)}</b><small>${esc(e.role || 'Projektleiter')}${c ? ` · im Projektzeitraum max. ${fmtP(c.peak)} (${VERDICT[c.verdict]})` : ''}</small></div>
+        <button type="button" class="btn btn-sm" data-pl="change">${I.users} Projektleiter wechseln</button></div>`;
+      return;
+    }
+    const opt = (e, c, no) => `<label class="pick-opt l-${c ? c.verdict : 'none'} ${no ? 'no' : ''}"><input type="radio" name="employeeId" value="${e.id}" ${cur === e.id ? 'checked' : ''}>${avatar(e, 'sm')}
+      <span class="po-t"><b>${esc(e.name)}</b><small>${c ? `${no ? 'keine Zeit · ' : ''}max. ${fmtP(c.peak)} im Zeitraum · ${fmtH(c.free)} frei` : esc(e.role || '')}</small></span>
+      ${c ? `<span class="pill lv l-${c.verdict}">${no ? 'keine Zeit' : VERDICT[c.verdict]}</span>` : ''}</label>`;
+    const box = ov.querySelector('#p-pick');
+    if(!valid){ box.innerHTML = `<p class="hint" style="margin:0 0 10px">Stunden, Baustart und Fertigstellung eingeben – dann siehst du, wer Zeit hat.</p><div class="pick">${state.employees.map(e => opt(e, null, false)).join('')}</div>`; return; }
+    const cands = rankCandidates({ ...d, id: '__d' }, ex ? ex.id : null);
+    const ok = cands.filter(c => c.verdict !== 'over'), no = cands.filter(c => c.verdict === 'over');
+    const keep = origEmp ? `<div class="pl-keep"><span>Bisher: <b>${esc(empById(origEmp).name)}</b> – neuen Projektleiter wählen</span><button type="button" class="linkish" data-pl="keep">Abbrechen, bei ${esc(empById(origEmp).name.split(' ')[0])} bleiben</button></div>` : '';
+    box.innerHTML = keep + (ok.length ? `<div class="pick">${ok.map(c => opt(c.e, c, false)).join('')}</div>` : `<div class="note l-over" style="margin:0">Niemand hat im gewählten Zeitraum genügend Kapazität. Zeitraum verlängern oder Stunden prüfen.</div>`)
+      + (no.length ? `<div class="pick-sep">Keine Zeit im Zeitraum</div><div class="pick">${no.map(c => opt(c.e, c, true)).join('')}</div>` : '');
+  };
+  ov.querySelector('#p-pick').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-pl]'); if(!b) return;
+    if(b.dataset.pl === 'change'){ changePL = true; renderPick(true); update(); }
+    else { changePL = false; p.employeeId = origEmp; ov.querySelector('#p-pick').innerHTML = ''; renderPick(true); update(); }
+  });
+  const update = () => {
+    renderPick();
+    const d = read(), box = ov.querySelector('#p-impact'), dist = ov.querySelector('#p-dist');
+    // aufgewendete Stunden vs. Budget
+    const hr = d.hours > 0 ? d.istStd / d.hours * 100 : 0, hs = hoursState(d);
+    ov.querySelector('#p-hrs').innerHTML = d.istStd > 0 ? `<div class="note l-${HSL[hs]}">${fmtH(d.istStd)} von ${fmtH(d.hours)} aufgewendet (${fmtP(hr)}) · ${hs === 'over' ? `<b>${fmtH(d.istStd - d.hours)} über Budget</b>` : hs === 'warn' ? `mehr Stunden verbraucht als Fortschritt (${d.progress} %)` : `noch ${fmtH(d.hours - d.istStd)} verfügbar`}</div>` : '';
+    // Fortschritt vs. verstrichene Zeit
+    f.progress.style.setProperty('--v', d.progress + '%'); ov.querySelector('#p-progl').textContent = d.progress + ' %';
+    const tp = timePct(d), tm = ov.querySelector('#p-tmark'), ph = ov.querySelector('#p-proghint');
+    tm.hidden = tp == null || (ex && ex.closed); if(tp != null) tm.style.left = tp + '%';
+    ph.innerHTML = tp == null ? '' : `Zeit verstrichen: <b style="color:var(--amber)">${Math.round(tp)} %</b> (oranger Strich)${tp - d.progress > 15 && !(ex && ex.closed) ? ' – Fortschritt liegt hinter dem Zeitplan.' : ''}`;
+    const valid = d.hours > 0 && d.start && d.end && d.end >= d.start;
+    const wm = valid ? workMonths(d) : 0;
+    dist.textContent = valid ? `≈ ${fmtH(d.hours / wm)} pro Monat über ${wm} Monat${wm > 1 ? 'e' : ''} (verteilt auf Arbeitstage).` : '';
+    const e = empById(d.employeeId);
+    if(!e || !valid){ box.innerHTML = '<p class="muted" style="font-size:13px">Stunden, Zeitraum und Projektleiter wählen, um die Auswirkung zu sehen.</p>'; return; }
+    const keys = Object.keys(projectMonths(d)).sort().slice(0, 12);
+    const draft = { ...d, id: '__d', employeeId: e.id };
+    const base = keys.map(k => util(e, k, { excludeId: ex ? ex.id : null })), withP = keys.map(k => util(e, k, { excludeId: ex ? ex.id : null, extra: draft }));
+    const peak = Math.max(...withP), lb = k => { const [y, m] = k.split('-'); return `${MONTHS[+m - 1]} ${y.slice(2)}`; };
+    box.innerHTML = `<div class="impact" style="--n:${keys.length}"><span></span>${keys.map(k => `<span class="ih">${lb(k)}</span>`).join('')}
+      <span class="il">ohne Projekt</span>${base.map(u => `<div class="hc l-${lvl(u)}"><b>${fmtP(u)}</b></div>`).join('')}
+      <span class="il">mit Projekt</span>${withP.map((u, i) => `<div class="hc l-${lvl(u)} ${u - base[i] > .5 ? 'with' : ''}"><b>${fmtP(u)}</b></div>`).join('')}</div>
+      <div class="note l-${peak > 100 ? 'over' : peak >= S().fullLoad ? 'full' : 'good'}">${peak > 100 ? `⚠ ${esc(e.name)} wäre mit bis zu ${fmtP(peak)} überlastet. Im Planer prüfen, wer Kapazität hat.` : peak >= S().fullLoad ? `${esc(e.name)} wäre mit bis zu ${fmtP(peak)} voll ausgelastet.` : `✓ ${esc(e.name)} hat genügend Kapazität (max. ${fmtP(peak)}).`}</div>`;
+  };
+  f.addEventListener('input', update); f.addEventListener('change', update); update();
+  f.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const d = read(), errs = [];
+    f.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid'));
+    const bad = (n, m) => { errs.push(m); f[n].classList.add('invalid'); };
+    ov.querySelectorAll('.pick').forEach(x => x.classList.remove('invalid-box'));
+    if(!d.name) bad('name', 'Projektname fehlt.');
+    if(!d.employeeId){ errs.push('Bitte einen Projektleiter wählen.'); ov.querySelectorAll('.pick').forEach(x => x.classList.add('invalid-box')); }
+    if(d.hours <= 0) bad('hours', 'Aufwand muss grösser als 0 sein.');
+    if(!d.start) bad('start', 'Baustart fehlt.');
+    if(!d.end) bad('end', 'Fertigstellung fehlt.'); else if(d.start && d.end < d.start) bad('end', 'Fertigstellung liegt vor dem Baustart.');
+    if(d.number && state.projects.some(x => x.number === d.number && (!ex || x.id !== ex.id))) bad('number', 'Projektnummer ist bereits vergeben.');
+    showErrors(f.querySelector('.errors'), errs); if(errs.length) return;
+    if(ex){
+      const from = ex.employeeId;
+      Object.assign(ex, d); ui.flash = ex.id;
+      toast(from && from !== d.employeeId ? `Projektleiter gewechselt: ${(empById(from) || {}).name || '–'} → ${empById(d.employeeId).name}` : 'Projekt gespeichert');
+    }
+    else { const np = { id: uid(), ...d }; state.projects.push(np); ui.flash = np.id; toast(`Projekt ${d.number || d.name} angelegt`); }
+    save(); closeModal(); render();
+  });
+}
+
+/* ---------- Projekt abschliessen: Abschluss-DB eintragen ---------- */
+function closeProjectModal(id){
+  const p = projById(id), e = empById(p.employeeId);
+  const def = p.closedAt || (p.end && p.end < todayISO() ? p.end : todayISO());
+  const prevAvg = e ? avgDB(empProjects(e).filter(x => x.id !== p.id)) : null;
+  const ov = openModal({
+    title: p.closed ? 'Abschluss bearbeiten' : 'Projekt abschliessen', sub: `${esc(p.number)} · ${esc(p.name)}${e ? ' · ' + esc(e.name) : ''}`,
+    body: `<form class="form" id="cform" novalidate><div class="errors" hidden></div>
+      <div class="grid-2">
+        ${field('Abschlussdatum *', `<input type="date" name="closedAt" value="${def}">`)}
+        ${field('DB bei Abschluss *', `<div class="affix"><input name="finalDB" type="number" step="0.1" value="${p.finalDB ?? ''}" placeholder="z. B. 18.5"><span>%</span></div>`, 'Deckungsbeitrag, mit dem das Projekt abgeschlossen hat (auch negativ möglich).')}
+      </div>
+      <div id="db-prev"></div>
+      ${field('Aufgewendete Stunden Projektleiter (total)', `<div class="affix"><input name="istStd" type="number" min="0" step="1" value="${p.istStd || ''}" placeholder="0"><span>/ ${fmtH(p.hours)}</span></div>`)}
+      <div id="hrs-prev"></div>
+      ${field('Notiz zum Abschluss', `<textarea name="closeNote" maxlength="500" placeholder="optional – z. B. Gründe für die Abweichung">${esc(p.closeNote)}</textarea>`)}
+      <p class="hint">Der Fortschritt wird auf 100 % gesetzt. Stunden nach dem Abschlussmonat zählen nicht mehr zur Auslastung.</p>
+    </form>`,
+    foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" type="submit" form="cform">${I.check} ${p.closed ? 'Speichern' : 'Projekt abschliessen'}</button>`
+  });
+  const f = ov.querySelector('#cform');
+  const upd = () => {
+    const raw = f.finalDB.value.trim(), db = raw === '' ? null : num(raw), l = dbLvl(db);
+    ov.querySelector('#db-prev').innerHTML = db == null ? '' : `<div class="note l-${l}">DB ${fmtDB(db)} · <b>${DBL[l]}</b>${prevAvg != null ? ` · Ø von ${esc(e.name)} bisher ${fmtDB(prevAvg)} (${db >= prevAvg ? 'darüber' : 'darunter'})` : ''}</div>`;
+    const ist = num(f.istStd.value), d = ist - p.hours;
+    ov.querySelector('#hrs-prev').innerHTML = ist > 0 ? `<div class="note l-${d > 0 ? 'over' : 'good'}">${d > 0 ? `${fmtH(d)} (${fmtP(d / p.hours * 100)}) über dem Stundenbudget` : `${fmtH(-d)} unter dem Stundenbudget`}</div>` : '';
+  };
+  f.addEventListener('input', upd); upd();
+  f.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const errs = [], raw = f.finalDB.value.trim();
+    f.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid'));
+    if(!f.closedAt.value){ errs.push('Abschlussdatum fehlt.'); f.closedAt.classList.add('invalid'); }
+    if(raw === '' || !isFinite(num(raw))){ errs.push('Bitte den DB in % eintragen.'); f.finalDB.classList.add('invalid'); }
+    showErrors(f.querySelector('.errors'), errs); if(errs.length) return;
+    Object.assign(p, { closed: true, closedAt: f.closedAt.value, finalDB: Math.round(num(raw) * 10) / 10, closeNote: f.closeNote.value.trim(), progress: 100, istStd: Math.max(0, num(f.istStd.value)) });
+    ui.flash = p.id; save(); closeModal(); render();
+    toast(`${p.name} abgeschlossen · DB ${fmtDB(p.finalDB)}`, dbLvl(p.finalDB) === 'over' ? 'warn' : 'ok');
+  });
+}
+
+/* ---------- Monatsdetail (Klick auf Feld) ---------- */
+function cellModal(empId, key){
+  const e = empById(empId), [y, m] = key.split('-'), title = `${MONTHS_L[+m - 1]} ${y}`;
+  const rows = empProjects(e).map(p => ({ p, h: projectMonths(p)[key] || 0 })).filter(r => r.h > 0).sort((a, b) => b.h - a.h);
+  const total = rows.reduce((s, r) => s + r.h, 0), u = e.hours ? total / e.hours * 100 : 0;
+  openModal({
+    title: `${esc(e.name)} · ${title}`, sub: `${fmtH(total)} von ${fmtH(e.hours)} gebucht · ${fmtP(u)} · ${LVL[lvl(u)]}`,
+    body: rows.length ? `<table class="tbl" style="min-width:0"><thead><tr><th>Projekt</th><th>Zeitraum</th><th class="r">Stunden im Monat</th></tr></thead><tbody>
+      ${rows.map(r => `<tr data-action="edit-project" data-id="${r.p.id}"><td><span class="muted">${esc(r.p.number)}</span> ${esc(r.p.name)}</td><td>${fmtDate(r.p.start)} – ${fmtDate(r.p.end)}</td><td class="r num">${fmtH(r.h)}</td></tr>`).join('')}
+      <tr><td><b>Total</b></td><td class="muted">${u > 100 ? `${fmtH(total - e.hours)} zu viel` : `${fmtH(e.hours - total)} frei`}</td><td class="r num"><b>${fmtH(total)}</b></td></tr></tbody></table>`
+      : `<p class="muted">In diesem Monat sind keine Projektstunden gebucht – ${fmtH(e.hours)} frei.</p>`,
+    foot: `<button class="btn" data-close>Schliessen</button><button class="btn btn-primary" data-modal-new="${e.id}">${I.plus} Projekt zuweisen</button>`
+  }).querySelector('[data-modal-new]').addEventListener('click', () => projectModal(null, e.id));
+}
+
+/* ---------- Einstellungen ---------- */
+function settingsModal(){
+  const s = S();
+  const ov = openModal({
+    title: 'Einstellungen', sub: 'Allgemein und Daten',
+    body: `<form class="form" id="sform" novalidate><div class="errors" hidden></div>
+      <div class="form-sec"><h4>Allgemein</h4><div class="grid-2">
+        ${field('Dein Name', `<input name="userName" value="${esc(s.userName)}" maxlength="60">`)}
+        ${field('Projektnummern beginnen mit', `<input name="numberPrefix" value="${esc(s.numberPrefix)}" maxlength="12">`)}
+        ${field('„Voll ausgelastet“ ab', `<div class="affix"><input name="fullLoad" type="number" min="1" max="150" value="${s.fullLoad}"><span>%</span></div>`, 'Ab diesem Wert gilt ein Monat als voll (orange). Über 100 % = überlastet (rot).')}
+        ${field('Standard-Stunden neuer Mitarbeiter', `<div class="affix"><input name="defaultHours" type="number" min="1" value="${s.defaultHours}"><span>h / Monat</span></div>`)}
+      </div></div>
+      <div class="form-sec"><h4>Bewertung Abschluss-DB</h4><div class="grid-2">
+        ${field('DB gut ab', `<div class="affix"><input name="dbGood" type="number" step="0.5" value="${s.dbGood}"><span>%</span></div>`, 'grün')}
+        ${field('DB kritisch unter', `<div class="affix"><input name="dbBad" type="number" step="0.5" value="${s.dbBad}"><span>%</span></div>`, 'rot – dazwischen orange')}
+      </div></div>
+      <div class="form-sec"><h4>Daten</h4>
+        <p class="hint" style="margin:0 0 12px">Daten werden lokal in diesem Browser gespeichert. Für Sicherung oder Weitergabe exportieren.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn" data-s="export">${I.down} Exportieren</button>
+          <button type="button" class="btn" data-s="import">${I.up} Importieren</button>
+          <button type="button" class="btn" data-s="demo">${I.spark} Demo-Daten</button>
+          <button type="button" class="btn btn-danger" data-s="reset">${I.trash} Alles löschen</button>
+        </div></div>
+    </form>`,
+    foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" type="submit" form="sform">${I.check} Speichern</button>`
+  });
+  const f = ov.querySelector('#sform');
+  f.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-s]'); if(!b) return;
+    ({ export: exportData, import: () => document.getElementById('import-file').click(), demo: loadDemo, reset: resetAll })[b.dataset.s]();
+  });
+  f.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const fl = num(f.fullLoad.value), g = num(f.dbGood.value), b = num(f.dbBad.value), errs = [];
+    f.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid'));
+    if(fl <= 0){ f.fullLoad.classList.add('invalid'); errs.push('„Voll ausgelastet“ muss grösser als 0 sein.'); }
+    if(!(b < g)){ f.dbBad.classList.add('invalid'); errs.push('„DB kritisch unter“ muss kleiner als „DB gut ab“ sein.'); }
+    showErrors(f.querySelector('.errors'), errs); if(errs.length) return;
+    Object.assign(state.settings, { userName: f.userName.value.trim(), numberPrefix: f.numberPrefix.value.trim() || '320', fullLoad: fl, defaultHours: Math.max(1, num(f.defaultHours.value)), dbGood: g, dbBad: b });
+    save(); closeModal(); render(); toast('Einstellungen gespeichert');
+  });
+}
+
+/* ---------- Bestätigen / Löschen ---------- */
+function confirmDel(type, id){
+  const isEmp = type === 'emp', obj = isEmp ? empById(id) : projById(id);
+  const n = isEmp ? empProjects(obj).length : 0;
+  const ov = openModal({
+    title: isEmp ? 'Mitarbeiter löschen?' : 'Projekt löschen?',
+    body: `<p class="muted"><b style="color:var(--text)">${esc(obj.name)}</b> wird entfernt.${n ? ` ${n} zugewiesene Projekt(e) bleiben erhalten, sind danach aber keinem Projektleiter zugewiesen.` : ''}</p>`,
+    foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-danger" id="c-ok">${I.trash} Löschen</button>`
+  });
+  ov.querySelector('#c-ok').addEventListener('click', () => {
+    if(isEmp){ state.employees = state.employees.filter(e => e.id !== id); state.projects.forEach(p => { if(p.employeeId === id) p.employeeId = ''; }); if(ui.empId === id) ui.view = 'team'; }
+    else state.projects = state.projects.filter(p => p.id !== id);
+    save(); closeModal(); render(); toast(isEmp ? 'Mitarbeiter gelöscht' : 'Projekt gelöscht');
+  });
+}
+
+/* =========================================================
+   Daten: Export / Import / Demo / Reset
+   ========================================================= */
+function exportData(){
+  const blob = new Blob([JSON.stringify({ app: 'ProjektCockpit-Auslastung', version: 2, exportedAt: new Date().toISOString(), ...state }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `auslastung_${todayISO()}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Export erstellt');
+}
+document.getElementById('import-file').addEventListener('change', ev => {
+  const file = ev.target.files[0]; ev.target.value = ''; if(!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      if(!d || !Array.isArray(d.employees) || !Array.isArray(d.projects)) throw 0;
+      // Daten aus der alten Version: Wochenkapazität / Soll-Stunden übernehmen
+      d.employees.forEach(e => { if(!e.hours && e.weeklyCapacity) e.hours = Math.round(e.weeklyCapacity * 4.33); });
+      d.projects.forEach(p => { if(!p.hours && p.sollStd) p.hours = p.sollStd; });
+      state = normalize(d); save(); closeModal(); ui.view = 'home'; render({ anim: true });
+      toast(`${state.employees.length} Mitarbeiter & ${state.projects.length} Projekte importiert`);
+    }catch(e){ toast('Import fehlgeschlagen – ungültige Datei', 'err'); }
+  };
+  r.readAsText(file);
+});
+function resetAll(){
+  const ov = openModal({ title: 'Alle Daten löschen?', body: '<p class="muted">Alle Projekte und Einstellungen werden entfernt. Danach startest du wieder mit deinem Team (Valentin Flury, Egzon Isufi, Mark Mettler, Nicola Jundt) ohne Projekte.</p>',
+    foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-danger" id="c-ok">${I.trash} Alles löschen</button>` });
+  ov.querySelector('#c-ok').addEventListener('click', () => { state = seedState(); save(); closeModal(); ui.view = 'home'; render({ anim: true }); toast('Alle Daten gelöscht – Team bleibt erhalten'); });
+}
+function loadDemo(){
+  const apply = () => {
+    const E = [['Anna Keller','Projektleiterin',160],['Marco Brunner','Bauleiter',168],['Sophie Meier','Projektleiterin (80 %)',128],['Lukas Weber','Junior Projektleiter',168],['Elena Rossi','Projektleiterin',140]]
+      .map(([name, role, hours], i) => ({ id: 'e' + (i + 1), name, role, hours, color: COLORS[i] }));
+    // [Name, PL, Stunden, Baustart, Fertig, Fortschritt, Abschluss-DB (= abgeschlossen)]
+    const P = [
+      ['Umbau Restaurant Krone','e1',180,'2025-09-01','2026-01-30',100,18.2], ['Werkhalle Nord','e2',400,'2025-05-05','2026-03-27',100,12.4],
+      ['Büroausbau Seefeld','e3',200,'2025-10-06','2026-03-13',100,22.0], ['Messestand Frühjahr','e5',90,'2026-01-05','2026-03-06',100,19.8],
+      ['Netzwerk-Upgrade Spital','e1',140,'2026-02-02','2026-05-29',100,24.5], ['Praxis Dr. Huber','e3',120,'2026-01-12','2026-04-24',100,27.3],
+      ['Carport-Anlage Gewerbe','e2',60,'2026-03-02','2026-05-15',100,8.1], ['Ladenbau Altstadt','e5',150,'2026-02-16','2026-06-12',100,31.2],
+      ['Gartenpavillon Seeblick','e4',40,'2026-05-04','2026-06-26',100,15.0],
+      ['Neubau MFH Lindenhof','e1',600,'2026-06-01','2027-03-31',45], ['Sanierung Schulhaus Rain','e1',360,'2026-09-01','2027-01-29',30], ['Umbau Arztpraxis Bahnhofstrasse','e1',120,'2026-11-02','2027-01-29',0],
+      ['Neubau Lagerhalle Ost','e2',900,'2026-03-02','2027-02-26',65], ['Fassadensanierung Wohnüberbauung','e2',280,'2026-10-05','2027-01-29',10], ['Tiefgarage Zentrum','e2',220,'2027-02-01','2027-05-28',0],
+      ['Bürogebäude Seestrasse','e3',450,'2026-04-13','2026-12-18',80], ['Ausbau Physiotherapie','e3',150,'2026-10-12','2026-12-23',15],
+      ['Photovoltaik Gewerbehof','e4',180,'2026-08-03','2027-03-31',20], ['Werkhof Gemeinde Umbau','e4',90,'2026-07-01','2026-12-31',55], ['Kellersanierung Haus Berger','e4',80,'2026-07-06','2026-10-16',95],
+      ['Showroom Zürich','e5',200,'2026-09-14','2026-12-11',35], ['Ersatzneubau Kindergarten','e5',160,'2026-11-02','2027-02-26',0], ['Wohnüberbauung Etappe 2','e5',500,'2027-01-11','2027-09-30',0]
+    ].map(([name, employeeId, hours, start, end, progress, db], i) => {
+      // aufgewendete PL-Stunden: Fortschritt × Budget × Faktor (einige Projekte bewusst über Budget)
+      const f = [1.05, 1.18, .92, 1, .97, .88, 1.3, .95, 1.1, 1, 1.45, .9, 1, 1.35, .8, 1, 1.05, .9, 1, 1.15, 1.25, 1, 1][i] || 1;
+      return { id: uid(), number: S().numberPrefix + String(i + 1).padStart(3, '0'), name, employeeId, hours, start, end, note: '',
+        progress, istStd: Math.round(hours * progress / 100 * f), closed: db != null, closedAt: db != null ? end : '', finalDB: db ?? null, closeNote: '' };
+    });
+    state = { employees: E, projects: P, settings: { ...state.settings } };
+    save(); closeModal(); ui.view = 'home'; render({ anim: true }); toast('Demo-Daten geladen');
+  };
+  if(state.employees.length || state.projects.length){
+    const ov = openModal({ title: 'Demo-Daten laden?', body: '<p class="muted">Dein Team und deine Projekte werden durch ein fiktives Demo-Team ersetzt. Vorher exportieren, wenn du deine Daten behalten willst. Zurück zu deinem Team: Einstellungen → Alles löschen.</p>', foot: `<button class="btn" data-close>Abbrechen</button><button class="btn btn-primary" id="c-ok">Ersetzen</button>` });
+    ov.querySelector('#c-ok').addEventListener('click', apply);
+  } else apply();
+}
+
+/* =========================================================
+   Toast
+   ========================================================= */
+function toast(msg, type = 'ok'){
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = `<i>${type === 'ok' ? '✓' : '!'}</i><span>${esc(msg)}</span>`;
+  document.getElementById('toast-root').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 260); }, 2800);
+}
+
+/* =========================================================
+   Suche
+   ========================================================= */
+const q = document.getElementById('q'), qres = document.getElementById('qres');
+q.addEventListener('input', () => {
+  const s = q.value.trim().toLowerCase();
+  if(!s){ qres.hidden = true; return; }
+  const es = state.employees.filter(e => `${e.name} ${e.role}`.toLowerCase().includes(s)).slice(0, 5);
+  const ps = state.projects.filter(p => `${p.number} ${p.name}`.toLowerCase().includes(s)).slice(0, 6);
+  qres.hidden = false;
+  qres.innerHTML = (es.length || ps.length) ? es.map(e => `<button data-action="open-emp" data-id="${e.id}">${avatar(e, 'sm')}<span>${esc(e.name)}<small>${esc(e.role || 'Mitarbeiter')} · ${fmtP(util(e, curKey()))}</small></span></button>`).join('')
+    + ps.map(p => `<button data-action="edit-project" data-id="${p.id}"><span class="g-num">${esc(p.number)}</span><span>${esc(p.name)}<small>${esc((empById(p.employeeId) || {}).name || '–')} · ${fmtDate(p.start)} – ${fmtDate(p.end)}</small></span></button>`).join('')
+    : '<div class="empty">Keine Treffer</div>';
+});
+q.addEventListener('blur', () => setTimeout(() => { qres.hidden = true; }, 180));
+
+/* =========================================================
+   Events
+   ========================================================= */
+document.addEventListener('pointerdown', ev => {
+  lastPt = { x: ev.clientX, y: ev.clientY };
+  const b = ev.target.closest('.btn'); if(!b || REDUCED) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 2, s = document.createElement('span');
+  s.className = 'ripple'; s.style.cssText = `width:${d}px;height:${d}px;left:${ev.clientX - r.left - d / 2}px;top:${ev.clientY - r.top - d / 2}px`;
+  b.appendChild(s); setTimeout(() => s.remove(), 650);
+}, true);
+
+document.addEventListener('click', ev => {
+  if(ev.target.closest('.prog, .ist-in')) return; // Regler / Stundenfeld bedienen, ohne die Zeile zu öffnen
+  const el = ev.target.closest('[data-action]');
+  if(!el) return;
+  const a = el.dataset.action, id = el.dataset.id, val = el.dataset.val;
+  if(el.closest('#modal-root') && !['edit-project'].includes(a)) return;
+  ev.stopPropagation();
+  switch(a){
+    case 'nav': go(el.dataset.view); break;
+    case 'open-emp': qres.hidden = true; q.value = ''; go('employee', { empId: id }); break;
+    case 'new-project':
+      if(!state.employees.length){ toast('Bitte zuerst einen Mitarbeiter anlegen', 'warn'); empModal(); }
+      else projectModal(null, el.dataset.emp); break;
+    case 'edit-project': qres.hidden = true; projectModal(id); break;
+    case 'del-project': confirmDel('project', id); break;
+    case 'close-project': closeProjectModal(id); break;
+    case 'res-year': ui.resYear = val; render(); break;
+    case 'new-emp': empModal(); break;
+    case 'edit-emp': empModal(id); break;
+    case 'del-emp': confirmDel('emp', id); break;
+    case 'settings': settingsModal(); break;
+    case 'demo': loadDemo(); break;
+    case 'import': document.getElementById('import-file').click(); break;
+    case 'home-month': ui.homeOff = +val; render(); break;
+    case 'cap-shift': ui.capOff = +val === 0 ? 0 : ui.capOff + +val; render(); break;
+    case 'cell': cellModal(id, el.dataset.key); break;
+    case 'proj-mode': ui.projMode = val; render(); break;
+    case 'proj-filter': ui.projFilter = val; render(); break;
+    case 'quick-h': ui.quick.hours = Math.max(10, ui.quick.hours + +val); render(); break;
+    case 'quick-plan': ui.plan = { name: '', number: nextNumber(), hours: ui.quick.hours, start: ui.quick.start, end: ui.quick.end }; go('planner'); setTimeout(plannerResults); break;
+    case 'plan-h': { ui.plan.hours = Math.max(1, num(ui.plan.hours) + +val); const inp = document.querySelector('[data-plan="hours"]'); if(inp) inp.value = ui.plan.hours; plannerResults(); break; }
+    case 'plan-assign': projectModal(null, id, { name: ui.plan.name, number: ui.plan.number, hours: ui.plan.hours, start: ui.plan.start, end: ui.plan.end }); break;
+    case 'setup-add': setupAdd(); break;
+  }
+});
+document.addEventListener('keydown', ev => {
+  if(ev.key === 'Escape'){ if(curOverlay) closeModal(); qres.hidden = true; }
+  if(ev.key === 'Enter' && ev.target.closest('.setup-add')){ ev.preventDefault(); setupAdd(); }
+  if(ev.key === 'Enter' && ev.target.matches('.ist-in')){ ev.preventDefault(); ev.target.blur(); }
+});
+const viewEl = document.getElementById('view');
+viewEl.addEventListener('input', ev => {
+  const t = ev.target;
+  if(t.dataset.progress){
+    t.style.setProperty('--v', t.value + '%');
+    const l = viewEl.querySelector(`[data-prog-l="${t.dataset.progress}"]`); if(l) l.textContent = t.value + ' %';
+    return;
+  }
+  if(t.dataset.input === 'proj-search'){ ui.projSearch = t.value; document.getElementById('proj-list').innerHTML = projectListHTML(filteredProjects()); }
+  if(t.dataset.plan){ ui.plan[t.dataset.plan] = t.dataset.plan === 'hours' ? num(t.value) : t.value; plannerResults(); }
+});
+viewEl.addEventListener('change', ev => {
+  const t = ev.target;
+  if(t.dataset.ist){
+    const p = projById(t.dataset.ist); if(!p) return;
+    p.istStd = Math.max(0, num(t.value)); save();
+    const cell = t.closest('.hrs'), r = p.hours > 0 ? p.istStd / p.hours * 100 : 0, s = hoursState(p);
+    if(cell){ cell.className = `hrs l-${p.istStd > 0 ? HSL[s] : 'none'}`; cell.querySelector('.hb i').style.width = clamp(r) + '%'; cell.querySelector(`[data-ist-p]`).textContent = p.istStd > 0 ? fmtP(r) : ''; }
+    renderTop();
+    if(s === 'over') toast(`${p.name}: ${fmtH(p.istStd - p.hours)} über dem Stundenbudget`, 'err');
+    else if(s === 'warn') toast(`${p.name}: ${fmtP(r)} der Stunden verbraucht, Fortschritt erst ${p.progress} %`, 'warn');
+    return;
+  }
+  if(t.dataset.progress){
+    const p = projById(t.dataset.progress); if(!p) return;
+    p.progress = +t.value; save();
+    const hc = t.closest('tr') && t.closest('tr').querySelector('.hrs');
+    if(hc && p.istStd > 0) hc.className = `hrs l-${HSL[hoursState(p)]}`;
+    const tp = timePct(p), wrap = t.closest('.prog');
+    if(wrap) wrap.classList.toggle('behind', tp != null && tp - p.progress > 15);
+    if(p.progress === 100 && !p.closed) toast(`${p.name}: 100 % – jetzt abschliessen und DB eintragen`, 'warn');
+    return;
+  }
+  if(t.dataset.change === 'sort-load'){ ui.sortLoad = t.checked; render(); }
+  if(t.dataset.change === 'proj-emp'){ ui.projEmp = t.value; render(); }
+  if(t.dataset.quick){ ui.quick[t.dataset.quick] = t.value; if(ui.quick.end < ui.quick.start) ui.quick.end = ui.quick.start; render(); }
+  if(t.dataset.setup){ state.settings[t.dataset.setup] = t.value.trim() || (t.dataset.setup === 'numberPrefix' ? '320' : ''); save(); render(); }
+});
+function setupAdd(){
+  const n = document.getElementById('su-name'), name = n.value.trim();
+  if(!name){ n.classList.add('invalid'); n.focus(); return; }
+  state.employees.push({ id: uid(), name, role: document.getElementById('su-role').value.trim(), hours: num(document.getElementById('su-h').value) || S().defaultHours, color: COLORS[state.employees.length % COLORS.length] });
+  save(); render({ anim: true }); toast(`${name} hinzugefügt – Projekte erfasst du über +`);
+}
+
+render({ anim: true });
+if(ui.view === 'planner') plannerResults();
+</script>
+</body>
+</html>
